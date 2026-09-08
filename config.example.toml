@@ -1,0 +1,73 @@
+# openconnect-saml configuration
+# Copy to ~/.config/openconnect-saml/config.toml and edit.
+
+# Which profile `openconnect-saml connect` uses when you name none.
+# Not needed if the file holds exactly one profile.
+default = "work"
+
+[work]
+# The only required setting.
+#
+# Put the GROUP URL here, path and all. On a Cisco gateway the tunnel group is
+# selected by the URL you post to - the same URL you would hand openconnect -
+# not by a separate group name. `probe` prints the tunnel group it resolved to,
+# so you can check you landed on the right one.
+server = "https://vpn.example.com/"
+
+# Only for the rare gateway that offers a group *list* and honours
+# <group-select>. Most ignore it; use the URL above instead. `probe` shows both.
+# group = ""
+
+# Command that opens a URL. Anything taking the URL as its first argument
+# works: xdg-open, firefox, chromium, "flatpak run org.mozilla.firefox".
+# Use "-" to never launch anything and just print the URL.
+#
+# Name a Chromium-based browser here (chromium / chrome / brave / vivaldi /
+# edge) and the SSO cookie is read out of it automatically over the DevTools
+# protocol - no copy-paste. Anything else falls back to the paste prompt.
+browser = "chromium"
+
+# How token mode gets the cookie: "auto" (CDP when the browser supports it,
+# else paste), "cdp" (insist on it) or "paste" (never automate).
+# capture = "auto"
+# cdpPort = 9333
+# captureTimeout = 300
+# browserProfile = "~/.cache/openconnect-saml/browser"
+
+# How to become root for the tunnel itself (authentication never needs it).
+# "doas" works too; set it to "" if you already run as root.
+# sudo = "sudo"
+
+# --- browserless mode (--mode browserless) --------------------------------
+# Submits your username and password to the identity provider directly, with
+# no browser at all. Only works where the login is plain HTML forms and there
+# is no second factor; `--mode token` remains the fallback.
+# user = "jdoe"
+#
+# The password is never read from this file. It comes from passwordCommand if
+# set, else $OPENCONNECT_SAML_PASSWORD, else a hidden prompt.
+# passwordCommand = "pass show vpn/i-med"
+# passwordCommand = "secret-tool lookup service vpn"
+#
+# Which second factor to take when the identity provider offers a choice as an
+# HTML form. Matched case-insensitively against each control's name, value and
+# id. Without it the first control is taken. Has no effect on Duo's JavaScript
+# prompt, where the choice is made in the browser.
+# factor = "passcode""
+
+# Extra flags handed to openconnect verbatim.
+# extra = ["--no-dtls"]
+
+# Pin the gateway certificate. Normally leave this out: the gateway reports its
+# own hash when the login completes and we pin openconnect to that. Set it if
+# you want the pin fixed in advance, or if openconnect prints
+# "Server certificate verify failed" and hands you a pin-sha256:... value.
+# servercert = "pin-sha256:xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx="
+
+# The AnyConnect version we claim to be. Only touch this if the gateway is
+# picky about client versions.
+# version = "4.10.05111"
+
+# Skip TLS verification while authenticating. Last resort for a gateway with a
+# private-CA certificate; it does not affect the tunnel itself.
+# insecure = false

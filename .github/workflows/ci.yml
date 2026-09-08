@@ -1,0 +1,168 @@
+# SPDX-License-Identifier: LGPL-3.0-only
+# SPDX-FileCopyrightText: Copyright (C) 2026 mplx <developer@mplx.eu>
+#
+# Two jobs. `test` runs on every push and pull request. `package` builds the
+# Arch package, and runs only when the commit carries a version tag *and* test
+# has passed - `needs:` gives the second half, the tag filter the first.
+
+name: CI
+
+on:
+  push:
+    branches: ['**']
+    # Version tags, with or without a leading `v`. This project and the Jennifer
+    # repo both tag bare (`0.3.0`), so a `v*`-only filter silently matches
+    # nothing and the tag push does not start a run at all.
+    tags:
+      - '[0-9]+.[0-9]+.[0-9]+'
+      - 'v[0-9]+.[0-9]+.[0-9]+'
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    container:
+      # The official Jennifer image. `:dev` tracks main, which is what this
+      # project needs: it declares `# pragma-jennifer-version: >=0.25.0` for the
+      # "http chunked" fix, and 0.25.0 is not released yet, so `:latest` would
+      # be refused by the program's own version floor. Move to `:0.25` when it
+      # ships. Hardcoded rather than an env var because `container.image` does
+      # not take the `env` context.
+      #
+      # ENTRYPOINT is `jennifer`, but a job container's entrypoint is replaced
+      # by the runner, so `run:` steps get the image's shell as usual. Debian
+      # userland, so bash, coreutils and the runner's mounted node all work.
+      image: ghcr.io/jennifer-language/jennifer:dev
+      # The image runs as a non-root user; the checked-out workspace belongs to
+      # the runner, so take root to avoid fighting over file ownership.
+      options: --user root
+    steps:
+      # The image ships the interpreter, its modules and ca-certificates, and
+      # nothing else - git included. actions/checkout needs it.
+      - name: Install git
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends git
+          rm -rf /var/lib/apt/lists/*
+
+      - uses: actions/checkout@v4
+
+      - name: Trust the workspace
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+
+      - name: Show the interpreter
+        run: jennifer version
+
+      - name: Version strings agree
+        run: ./tests/check-versions.sh
+
+      # A tagged build must also match the tag: v0.3.0 against a tree that still
+      # says 0.2.0 is the mistake this catches.
+      - name: Version matches the tag
+        if: startsWith(github.ref, 'refs/tags/')
+        run: ./tests/check-versions.sh "${GITHUB_REF_NAME}"
+
+      # No openconnect and no browser needed: the suite stubs the first and
+      # never launches the second.
+      - name: Run the suite
+        run: ./tests/run.sh
+
+  package:
+    name: Package (Arch)
+    needs: test
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    permissions:
+      # Attaching assets to the release is a write to the repository.
+      contents: write
+    # Arch, not the Jennifer image: makepkg is what builds an Arch package, and
+    # there is no makepkg on Debian. No interpreter is installed here - see the
+    # build step.
+    container:
+      image: archlinux:base-devel
+    steps:
+      - name: Install git
+        run: pacman -Syu --noconfirm git
+
+      - uses: actions/checkout@v4
+
+      - name: Trust the workspace
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+
+      # --nodeps: the package is file copies, so nothing is compiled and no
+      # interpreter is needed. Its `depends` are the user's runtime needs.
+      # --nocheck: check() runs tests/run.sh, which the `test` job above already
+      # ran on this commit; `needs: test` makes that a guarantee.
+      - name: Build the package
+        run: |
+          useradd -m build 2>/dev/null || true
+          chown -R build "$GITHUB_WORKSPACE"
+          su build -c "cd '$GITHUB_WORKSPACE/packaging/arch' && makepkg --noconfirm --nodeps --nocheck"
+
+      # Installing it would need jennifer present to run the program, so the
+      # package is inspected instead: right version, right files, right symlink.
+      - name: Check the package
+        run: |
+          cd packaging/arch
+          pkg=$(ls ./*.pkg.tar.zst)
+          echo "built $pkg"
+          tar --zstd -xOf "$pkg" .PKGINFO | grep -E '^(pkgname|pkgver|arch|depend)'
+          got=$(tar --zstd -xOf "$pkg" .PKGINFO | sed -n 's/^pkgver = \(.*\)-[0-9]*$/\1/p')
+          test "$got" = "${GITHUB_REF_NAME#v}" \
+            || { echo "package says $got, tag says ${GITHUB_REF_NAME#v}" >&2; exit 1; }
+          for want in usr/bin/openconnect-saml \
+                      usr/lib/openconnect-saml/bin/openconnect-saml \
+                      usr/lib/openconnect-saml/src/saml.j \
+                      usr/share/man/man1/openconnect-saml.1.gz; do
+            tar --zstd -tf "$pkg" | grep -qx "$want" \
+              || { echo "missing from package: $want" >&2; exit 1; }
+          done
+          tar --zstd -tvf "$pkg" | grep -q 'usr/bin/openconnect-saml ->' \
+            || { echo "usr/bin entry is not a symlink" >&2; exit 1; }
+          echo "package contents ok"
+
+      - name: Collect the release files
+        run: |
+          ver=${GITHUB_REF_NAME#v}
+          mkdir -p release
+          cp packaging/arch/*.pkg.tar.zst release/
+
+          # Source archive from git, so it carries exactly the tracked files -
+          # no build output, and no config.toml, which is gitignored precisely
+          # because it holds someone's gateway.
+          git archive --format=tar.gz \
+            --prefix="openconnect-saml-${ver}/" \
+            -o "release/openconnect-saml-${ver}.tar.gz" HEAD
+
+          # Sidecar checksums, in the "HASH  FILENAME" form a PKGBUILD's
+          # sha256sums can be filled from directly.
+          (cd release && for f in *.pkg.tar.zst *.tar.gz; do sha256sum "$f" > "$f.sha256"; done)
+          ls -l release
+          cat release/*.sha256
+
+      - name: Determine pre-release status
+        id: prerel
+        run: |
+          # Everything in the 0.x.y series is a pre-release, as upstream
+          # Jennifer does it. Tags are bare semver.
+          case "${GITHUB_REF_NAME#v}" in
+            0.*) echo "prerelease=true"  >> "$GITHUB_OUTPUT" ;;
+            *)   echo "prerelease=false" >> "$GITHUB_OUTPUT" ;;
+          esac
+
+      - name: Publish the release
+        uses: softprops/action-gh-release@v3
+        with:
+          draft: false
+          prerelease: ${{ steps.prerel.outputs.prerelease }}
+          generate_release_notes: true
+          fail_on_unmatched_files: true
+          files: |
+            release/*.pkg.tar.zst
+            release/*.tar.gz
+            release/*.sha256

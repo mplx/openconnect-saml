@@ -1,0 +1,369 @@
+.\" SPDX-License-Identifier: LGPL-3.0-only
+.\" SPDX-FileCopyrightText: Copyright (C) 2026 mplx <developer@mplx.eu>
+.TH OPENCONNECT-SAML 1 "2026-09-08" "openconnect-saml 0.3.0" "User Commands"
+.
+.SH NAME
+openconnect-saml \- connect to a Cisco AnyConnect VPN that authenticates with SAML/SSO
+.
+.SH SYNOPSIS
+.B openconnect-saml
+.I command
+.RI [ profile ]
+.RI [ options ]
+.
+.SH DESCRIPTION
+.B openconnect-saml
+drives the SAML/SSO login of a Cisco AnyConnect gateway and hands the resulting
+session cookie to
+.BR openconnect (8).
+Your ordinary desktop browser performs the login, so hardware keys, push
+notifications, password managers and existing sessions behave exactly as they do
+elsewhere. No embedded webview, no browser-automation stack.
+.PP
+Cisco gateways offer SAML in one of two shapes, and
+.B connect
+asks the gateway which it speaks before choosing. See
+.B AUTHENTICATION MODES
+below.
+.PP
+Authentication runs as the invoking user; only the tunnel itself is started with
+elevated privilege, so the browser opens in your own desktop session.
+.
+.SH COMMANDS
+.TP
+.B connect
+Authenticate, then start the tunnel in the background. Returns once the tunnel
+is up, because
+.BR openconnect (8)
+only daemonises after the connection is established.
+.TP
+.B cookie
+Authenticate and print
+.BR COOKIE ,
+.B CONNECT_URL
+and
+.B FINGERPRINT
+as shell-quoted assignments, without connecting. Suitable for
+.BR eval .
+.TP
+.B probe
+Ask the gateway how it authenticates and report what it says: the resolved
+tunnel group, the login URL, the token cookie name, the browser mode, and
+whether the local
+.BR openconnect (8)
+can drive it.
+.TP
+.B status
+Report whether the tunnel is up. Exits 0 when it is, 1 when it is not.
+.TP
+.B disconnect
+Stop a tunnel started by
+.BR connect .
+.
+.SH OPTIONS
+.TP
+.BI \-s " URL" "\fR, \fP" \-\-server " URL"
+The gateway URL,
+.I including the group path
+- for example
+.IR https://vpn.example.com/saml .
+On a Cisco gateway the URL path is what selects the tunnel group. Required
+unless a profile supplies it.
+.TP
+.BI \-g " GROUP" "\fR, \fP" \-\-group " GROUP"
+Send
+.I GROUP
+as
+.BR <group-select> .
+Most gateways ignore this; prefer the URL path. See
+.BR "TUNNEL GROUPS" .
+.TP
+.BI \-b " CMD" "\fR, \fP" \-\-browser " CMD"
+Command that opens a URL, taking it as the first argument. A Chromium-based
+command (chromium, chrome, brave, vivaldi, edge) also enables automatic cookie
+capture. Use
+.RB \(dq \- \(dq
+to launch nothing and only print the URL.
+.TP
+.BI \-\-sudo " CMD"
+Privilege helper used for the tunnel. Empty to run
+.BR openconnect (8)
+directly. Default
+.BR sudo .
+.TP
+.BI \-m " MODE" "\fR, \fP" \-\-mode " MODE"
+Authentication route:
+.BR auto ", " external ", " token " or " browserless .
+Default
+.BR auto .
+.TP
+.BI \-\-capture " HOW"
+How
+.B token
+mode collects the cookie:
+.B auto
+(the DevTools protocol when the browser supports it, else a prompt),
+.B cdp
+(insist on the protocol) or
+.B paste
+(always prompt). Default
+.BR auto .
+.TP
+.BI \-u " NAME" "\fR, \fP" \-\-user " NAME"
+Username for
+.B browserless
+mode.
+.TP
+.BI \-\-password\-command " CMD"
+Command whose first line of output is the password, for
+.B browserless
+mode - for example
+.RB \(dq "pass show vpn/work" \(dq.
+.TP
+.BI \-\-factor " NAME"
+Which second factor to take when the identity provider offers a choice as an
+HTML form - several submit buttons, or a radio group.
+.I NAME
+is matched case-insensitively, as a substring, against each control's
+.BR name ", " value " and " id ,
+so
+.B \-\-factor push
+finds
+.IR value=\(dqDuo\ Push\(dq ,
+.I id=push-button
+and
+.I name=push
+alike. Without it the first submit control is taken, as a browser does when you
+press Enter; a form offering a real choice with nothing matching
+.I NAME
+is an error listing what is on offer, rather than a guess. Has no effect on a
+second factor drawn by JavaScript, such as Duo's prompt, where the choice is
+made in the browser.
+.TP
+.BI \-\-debug\-dir " DIR"
+Save each page of a
+.B browserless
+login into
+.IR DIR .
+These pages contain CSRF tokens and SAML assertions.
+.TP
+.BR \-p ", " \-\-print
+Print the
+.BR openconnect (8)
+command instead of running it.
+.TP
+.BR \-k ", " \-\-insecure
+Skip TLS verification while authenticating. Does not affect the tunnel, which
+is pinned separately.
+.TP
+.BR \-v ", " \-\-verbose
+Narrate the exchange on standard error.
+.TP
+.BR \-h ", " \-\-help
+Show help. Accepted by every subcommand.
+.TP
+.B \-\-version
+Print the version and exit.
+.
+.SH AUTHENTICATION MODES
+.TP
+.B external
+The gateway is configured with
+.IR "saml external-browser" .
+.BR openconnect (8)
+implements this natively, listening on localhost port 29786 for a token
+encrypted to a key it generated. That half is left to
+.BR openconnect (8);
+this program only separates authentication from connection.
+.TP
+.B token
+The classic flow: the token arrives as a cookie on the gateway's own domain.
+The
+.B <config-auth>
+XML protocol is spoken directly, and the cookie is collected as
+.B \-\-capture
+directs.
+.TP
+.B browserless
+No browser at all. The identity provider's HTML forms are submitted directly
+using
+.B \-\-user
+and a password. This works only where the login is plain HTML forms: a second
+factor or a JavaScript-driven page ends it, with a message saying so. It never
+resubmits a refused credential. Where a second factor is offered as a form,
+.B \-\-factor
+chooses between the options.
+.TP
+.B auto
+Offers the external-browser method, and uses it when the gateway and the local
+.BR openconnect (8)
+both support it; otherwise falls back to
+.BR token .
+Never selects
+.BR browserless ,
+which is always explicit.
+.
+.SH TUNNEL GROUPS
+On a Cisco gateway the tunnel group is selected by the URL the client posts to,
+which becomes
+.BR <group-access> .
+Put the whole group URL in
+.BR \-\-server .
+The separate
+.B <group-select>
+element, which
+.B \-\-group
+sends, is widely ignored.
+.B probe
+prints the tunnel group the gateway actually resolved to, so a wrong URL path is
+visible at a glance.
+.
+.SH CONFIGURATION
+Read from
+.I ~/.config/openconnect\-saml/config.toml
+unless
+.B $OPENCONNECT_SAML_CONFIG
+names another file. Every top-level table is a profile; a top-level
+.B default
+key names the one to use when none is given on the command line. A file holding
+exactly one profile needs no
+.BR default .
+.PP
+.RS 4
+.EX
+default = "work"
+
+[work]
+server  = "https://vpn.example.com/saml"
+browser = "chromium"
+.EE
+.RE
+.PP
+Recognised keys:
+.BR server ", " group ", " browser ", " sudo ", " version ", " servercert ", "
+.BR insecure ", " extra ", " user ", " passwordCommand ", " capture ", "
+.BR cdpPort ", " browserProfile ", " captureTimeout .
+Command-line options override the profile.
+.
+.SH FILES
+.TP
+.I /usr/lib/openconnect\-saml/src/saml.j
+The program itself. The executable in
+.I /usr/bin
+is a symlink to a thin wrapper beside this module, which it imports by relative
+path.
+.TP
+.I ~/.config/openconnect\-saml/config.toml
+Profiles. Contains a gateway URL and possibly a certificate pin; keep it
+private.
+.TP
+.I ~/.cache/openconnect\-saml/browser
+Profile directory for the capture browser. Separate from your everyday browser
+profile so the two never collide, and persistent so the identity provider's
+session survives to the next connect.
+.TP
+.IR /run/openconnect\-saml\- <profile> .pid
+The tunnel's process id, written by
+.BR openconnect (8)
+and read by
+.BR disconnect .
+.TP
+.IR /run/openconnect\-saml\- <profile> .log
+Output of the backgrounded
+.BR openconnect (8).
+Read this first when a tunnel drops or will not start.
+.
+.SH ENVIRONMENT
+.TP
+.B OPENCONNECT_SAML_CONFIG
+Path to the configuration file, overriding the default location.
+.TP
+.B OPENCONNECT_SAML_PASSWORD
+Password for
+.B browserless
+mode, used when
+.B passwordCommand
+is unset. Consulted before prompting.
+.
+.SH EXIT STATUS
+.TP
+.B 0
+Success. For
+.BR status ,
+the tunnel is up.
+.TP
+.B 1
+The operation failed, or
+.B status
+found no tunnel.
+.TP
+.B 2
+Usage error: an unknown command, an unknown flag, or a bad option value.
+.
+.SH EXAMPLES
+.PP
+Ask a gateway what it wants:
+.PP
+.RS 4
+.EX
+openconnect\-saml probe \-\-server https://vpn.example.com/saml
+.EE
+.RE
+.PP
+Connect using the default profile, having primed
+.BR sudo (8)
+first:
+.PP
+.RS 4
+.EX
+sudo \-v && openconnect\-saml connect
+.EE
+.RE
+.PP
+Connect without a browser, taking the password from a password store:
+.PP
+.RS 4
+.EX
+openconnect\-saml connect \-\-mode browserless \-\-user jdoe \e
+    \-\-password\-command "pass show vpn/work"
+.EE
+.RE
+.PP
+Authenticate only, and use the result yourself:
+.PP
+.RS 4
+.EX
+eval "$(openconnect\-saml cookie)"
+printf '%s\en' "$COOKIE" | sudo openconnect \-\-cookie\-on\-stdin \e
+    \-\-servercert "$FINGERPRINT" "$CONNECT_URL"
+.EE
+.RE
+.
+.SH NOTES
+.B connect
+invokes the privilege helper non-interactively, because the child process has no
+terminal on which to prompt. Run
+.B sudo \-v
+first, or use
+.B \-\-print
+to obtain the command and run it yourself.
+.PP
+The session cookie is passed to
+.BR openconnect (8)
+on standard input and never appears on a command line.
+.PP
+The certificate pin the gateway reports at the end of the login is passed to
+.BR openconnect (8)
+as
+.BR \-\-servercert ,
+so the tunnel is pinned to the certificate that authenticated the session.
+.
+.SH SEE ALSO
+.BR openconnect (8),
+.BR sudo (8),
+.BR jennifer (1)
+.PP
+The README distributed with this program documents the protocol in more detail.
+.
+.SH AUTHORS
+mplx <developer@mplx.eu>

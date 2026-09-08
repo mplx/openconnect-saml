@@ -1,0 +1,10 @@
+# Your local VPN profile: gateway URL, tunnel group, certificate pin.
+# The tracked template is config.example.toml.
+config.toml
+
+# makepkg build artefacts. The PKGBUILD lives in packaging/arch/ precisely so
+# that makepkg's own src/ and pkg/ directories land there and not on top of the
+# project's src/ - `makepkg -C` empties $srcdir, which would delete the source.
+packaging/arch/src/
+packaging/arch/pkg/
+packaging/arch/*.pkg.tar.zst

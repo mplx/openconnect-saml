@@ -1,0 +1,29 @@
+#!/usr/bin/env -S jennifer run
+# SPDX-License-Identifier: LGPL-3.0-only
+# SPDX-FileCopyrightText: Copyright (C) 2026 mplx <developer@mplx.eu>
+# pragma-jennifer-version: >=0.25.0
+# pragma-jennifer-capability: net
+# pragma-jennifer-capability: exec
+
+/**
+ * Connect to a Cisco AnyConnect gateway that authenticates with SAML/SSO,
+ * using your ordinary desktop browser and plain openconnect.
+ *
+ * No embedded webview, no Playwright, no ffmpeg. The whole program lives in
+ * `src/saml.j`, which this executable exists only to run: a module top level
+ * is declarations-only, so putting it there is what lets `saml_test.j` splice
+ * the module and test its private surface directly.
+ *
+ * See openconnect-saml(1) for the interface and the README for the protocol.
+ *
+ * @module openconnect-saml
+ * @version 0.3.0
+ * @see src/saml.j
+ * @example
+ *   openconnect-saml probe   --server https://vpn.example.com/saml
+ *   openconnect-saml connect --server https://vpn.example.com/saml
+ */
+
+import "../src/saml.j" as saml;
+
+exit saml.run();

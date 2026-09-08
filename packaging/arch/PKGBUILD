@@ -1,0 +1,94 @@
+# SPDX-License-Identifier: LGPL-3.0-only
+# Copyright (C) 2026 mplx <developer@mplx.eu>
+#
+# PKGBUILD for `openconnect-saml`, built from the project it sits inside rather
+# than from a remote: the project is local, so `makepkg -si` in this directory
+# is the whole workflow.
+#
+# It lives in packaging/arch/ rather than at the project root for a concrete
+# reason: makepkg builds in $startdir/src, and `makepkg -C` empties that
+# directory. With the PKGBUILD at the root that is the project's own src/, and
+# a routine clean build would delete the source.
+#
+# Maintainer: mplx <developer@mplx.eu>
+
+pkgname=openconnect-saml
+pkgver=0.3.0
+pkgrel=1
+pkgdesc='Connect to a Cisco AnyConnect VPN that authenticates with SAML/SSO, using your own browser'
+arch=('any')
+url='https://github.com/mplx/openconnect-saml'
+license=('LGPL-3.0-only')
+
+# jennifer runs the script; openconnect builds the tunnel.
+#
+# Deliberately no `jennifer>=0.25.0` here, even though the script needs the
+# "http chunked" fix that lands in 0.25.0. A pacman version relation cannot
+# express the rule that actually applies: any -dev build is acceptable, because
+# it is ahead of the release it names. jennifer-git currently versions itself
+# 0.24.0.rN.g<sha>, which vercmp puts *below* 0.25.0, so a floor here would
+# refuse to install on exactly the interpreters that do work. The script's own
+# `# pragma-jennifer-version: >=0.25.0` enforces it at runtime with that
+# nuance, and says so clearly when it is not met.
+depends=(
+    'jennifer'
+    'openconnect'
+)
+
+optdepends=(
+    'chromium: automatic SSO cookie capture over the DevTools protocol'
+    'sudo: start the tunnel as root (or set sudo = "doas" in the profile)'
+)
+
+# `any` architecture: this is an interpreted script, so there is nothing to
+# compile and nothing architecture-specific in the package.
+options=('!strip' '!debug')
+
+# No source array: the files are two directories up, and package() installs
+# them from there. Listing them as local sources instead would make makepkg
+# copy each one into the build directory, leaving stray duplicates somebody
+# could edit by mistake.
+#
+# To publish: set source=("$pkgname::git+$url.git"), add a pkgver(), and swap
+# $_root below for $srcdir/$pkgname.
+source=()
+sha256sums=()
+
+# The project root, relative to this PKGBUILD.
+_root="$startdir/../.."
+
+check() {
+    # The interpreter is a hard dependency, so it is present at build time and
+    # runs the whole suite: static checks, version consistency, unit tests and
+    # the integration tests against the mock gateway. A package that fails its
+    # own tests should not be built.
+    "$_root/tests/run.sh"
+}
+
+package() {
+    # The program is two files - a thin executable and the module it imports as
+    # `../src/saml.j` - so the installed layout has to preserve that relative
+    # step. Both go under /usr/lib/$pkgname, and /usr/bin gets a symlink:
+    # Jennifer resolves a relative import against the script's *real* path, so
+    # the link works exactly like the file it points at.
+    install -Dm755 "$_root/bin/openconnect-saml" \
+        "$pkgdir/usr/lib/$pkgname/bin/openconnect-saml"
+    install -Dm644 "$_root/src/saml.j" \
+        "$pkgdir/usr/lib/$pkgname/src/saml.j"
+    install -dm755 "$pkgdir/usr/bin"
+    ln -sf "../lib/$pkgname/bin/openconnect-saml" "$pkgdir/usr/bin/openconnect-saml"
+
+    # Man page.
+    install -Dm644 "$_root/man/openconnect-saml.1" \
+        "$pkgdir/usr/share/man/man1/openconnect-saml.1"
+    gzip -9n "$pkgdir/usr/share/man/man1/openconnect-saml.1"
+
+    # Documentation, including the annotated config the user copies into
+    # ~/.config/openconnect-saml/config.toml. It is a template, not a config:
+    # shipping it under /etc would invite pacman to treat a user's private
+    # gateway settings as a package-owned file.
+    install -Dm644 "$_root/README.md" \
+        "$pkgdir/usr/share/doc/$pkgname/README.md"
+    install -Dm644 "$_root/config.example.toml" \
+        "$pkgdir/usr/share/doc/$pkgname/config.example.toml"
+}
