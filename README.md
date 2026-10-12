@@ -25,6 +25,34 @@ openconnect-saml disconnect
 
 ## Install
 
+With [jvc](https://jvc.jennifer-lang.dev/), which reads the `deck.toml` in this
+repository and puts the command on your `PATH`:
+
+```sh
+jvc app install https://github.com/mplx/openconnect-saml
+```
+
+That installs the newest release tag into `~/.local/share/jvc/apps/` and links
+`~/.local/bin/openconnect-saml` at it. The whole tree is unpacked together, so
+`bin/` keeps finding `../src/saml.j`; the link resolves by real path, so the
+command works from anywhere. `--version "^0.3"` pins a range, and
+`jvc app update openconnect-saml` / `jvc app uninstall openconnect-saml` move it
+on or remove it again. There is nothing to vendor - every import is a bundled
+stdlib module, so the manifest's only requirement is the interpreter itself.
+
+Install it for yourself, **not** with `--scope system`: this program wants to run
+as your desktop user and escalate for the tunnel on its own. See [Notes](#notes).
+
+An app install carries `config.example.toml` but writes no configuration of its
+own, so copy one out of the installed tree once:
+
+```sh
+install -Dm600 ~/.local/share/jvc/apps/openconnect-saml/config.example.toml \
+               ~/.config/openconnect-saml/config.toml
+```
+
+As an OS package instead:
+
 ```sh
 cd packaging/arch && makepkg -si       # runs the test suite first
 ```
@@ -169,6 +197,7 @@ and SAML assertions).
 | `tests/run.sh` | the whole suite; what CI and `makepkg` run |
 | `tests/integration.sh` | end-to-end tests against `tests/mock-gateway.j` |
 | `tests/check-versions.sh`, `tests/check-docs.j` | version and doc-comment gates |
+| `deck.toml` | the app manifest `jvc app install` reads |
 | `packaging/arch/PKGBUILD` | the Arch package |
 
 ```sh

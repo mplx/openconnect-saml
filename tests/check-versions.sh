@@ -2,10 +2,11 @@
 # SPDX-License-Identifier: LGPL-3.0-only
 # SPDX-FileCopyrightText: Copyright (C) 2026 mplx <developer@mplx.eu>
 #
-# One version string, four places that must agree: the module constant, the two
-# @version doc tags, the man page header and the PKGBUILD. They drift silently -
-# nothing breaks at runtime when the man page claims a version the program does
-# not - so a check is the only thing that keeps them honest.
+# One version string, and six places that must agree with it: the two @version
+# doc tags, the man page header, the PKGBUILD, the deck manifest that
+# `jvc app install` records, and the unit suite's own assertion. They drift
+# silently - nothing breaks at runtime when the man page claims a version the
+# program does not - so a check is the only thing that keeps them honest.
 #
 # With an argument, also require that version (used by the tag build, where the
 # git tag has to match what the tree says).
@@ -39,6 +40,10 @@ check "$(sed -n 's/^ \* @version \(.*\)$/\1/p' src/saml.j | head -1)" 'src @vers
 check "$(sed -n 's/^ \* @version \(.*\)$/\1/p' bin/openconnect-saml | head -1)" 'bin @version'
 check "$(sed -n 's/^\.TH .* "openconnect-saml \([^"]*\)".*$/\1/p' man/openconnect-saml.1)" 'man page'
 check "$(sed -n 's/^pkgver=\(.*\)$/\1/p' packaging/arch/PKGBUILD)" 'PKGBUILD pkgver'
+
+# deck.toml is what `jvc app install` records as the installed version, so a
+# stale one here means jvc reports a version the program does not claim.
+check "$(sed -n 's/^version = "\(.*\)"$/\1/p' deck.toml | head -1)" 'deck.toml version'
 
 # The unit suite asserts APP_VERSION too, so it has to be told as well.
 check "$(sed -n 's/.*testing.assertEqual(APP_VERSION, "\(.*\)");.*/\1/p' src/saml_test.j)" 'unit test'
