@@ -457,10 +457,9 @@ func testBrowserSpeaksCdp() {
 # ------------------------------------------------- handing the browser back
 #
 
-# A chromium that is started as root exits before it opens the debug port, so
-# when the program itself runs under sudo the browser is handed to the invoking
-# user. These cover the two pure halves of that: where the profile lands, and
-# what the launch is prefixed with.
+# Chromium started as root exits before opening the debug port, so under sudo
+# the browser is handed to the invoking user. Two pure halves: where the profile
+# lands, and what the launch is prefixed with.
 
 func fixtureOwner() {
     return BrowserOwner{name: "jdoe", uid: 1000, home: "/home/jdoe"};
@@ -471,43 +470,120 @@ func fixtureNobody() {
 }
 
 func testBrowserProfileDirFollowsTheOwner() {
-    # An explicit setting wins whoever the browser ends up running as.
+    # An explicit setting wins, whoever the browser runs as.
     def p as Profile init fixtureProfile();
     $p.browserProfile = "/tmp/fixed";
     testing.assertEqual(browserProfileDir($p, fixtureNobody()), "/tmp/fixed");
     testing.assertEqual(browserProfileDir($p, fixtureOwner()), "/tmp/fixed");
 
-    # Handing the browser off moves the profile into that user's home, so root
-    # never owns the session it is about to read a cookie out of.
+    # A handoff moves the profile into that user's home, so root never owns the
+    # session it reads a cookie out of.
     testing.assertEqual(
         browserProfileDir(fixtureProfile(), fixtureOwner()),
         "/home/jdoe/.cache/" + APP + "/browser");
 }
 
 func testBrowserLaunchPrefixIsEmptyWhenUnprivileged() {
-    # The ordinary case: we are already the desktop user, so no sudo at all.
+    # Ordinary case: already the desktop user, so no sudo.
     testing.assertEqual(len(browserLaunchPrefix(fixtureNobody())), 0);
 }
 
 func testBrowserLaunchPrefixHandsTheBrowserBack() {
     def argv as list of string init browserLaunchPrefix(fixtureOwner());
     testing.assertEqual($argv[0], "sudo");
-    # -n, because os.spawn gives the browser no terminal to prompt on.
+    # -n: os.spawn gives the browser no terminal to prompt on.
     testing.assertEqual($argv[1], "-n");
     testing.assertEqual($argv[2], "-u");
     testing.assertEqual($argv[3], "jdoe");
     testing.assertEqual($argv[4], "env");
 
-    # sudo resets the environment, so the target user's own HOME and runtime
-    # directory have to be carried back in instead of root's being inherited.
+    # sudo resets the environment, so HOME and the runtime dir are carried back
+    # in rather than inherited from root.
     testing.assertTrue(lists.contains($argv, "HOME=/home/jdoe"));
     testing.assertTrue(lists.contains($argv, "XDG_RUNTIME_DIR=/run/user/1000"));
     testing.assertFalse(lists.contains($argv, "HOME=/root"));
 }
 
+#
+# ------------------------------------------------ refusals around a credential
+#
+
+func testIsXmlName() {
+    # What a real gateway asks for.
+    testing.assertTrue(isXmlName("sso-token"));
+    testing.assertTrue(isXmlName("sso-token-v2"));
+    testing.assertTrue(isXmlName("_private"));
+    testing.assertTrue(isXmlName("a.b-c9"));
+    # The element name wraps the token and cannot be escaped, so anything that
+    # breaks out of the tag is refused.
+    testing.assertFalse(isXmlName(""));
+    testing.assertFalse(isXmlName("a><b"));
+    testing.assertFalse(isXmlName("a b"));
+    testing.assertFalse(isXmlName("a/b"));
+    testing.assertFalse(isXmlName("9lead"));
+    testing.assertFalse(isXmlName("-lead"));
+    testing.assertFalse(isXmlName("has\"quote"));
+}
+
+func throwsOnInjectedSsoField() {
+    # Such a name would otherwise be interpolated into the reply document.
+    parseAuthRequest(strings.replace(
+        AUTH_REQUEST,
+        '<input type="sso" name="sso-token" />',
+        '<input type="sso" name="a&gt;&lt;b" />'));
+}
+
+func testParseAuthRequestRefusesAnUnusableSsoField() {
+    testing.assertThrows("throwsOnInjectedSsoField", "gateway");
+}
+
+func testIsLoopbackHost() {
+    testing.assertTrue(isLoopbackHost("localhost"));
+    testing.assertTrue(isLoopbackHost("127.0.0.1"));
+    testing.assertTrue(isLoopbackHost("127.1.2.3"));
+    testing.assertTrue(isLoopbackHost("::1"));
+    testing.assertTrue(isLoopbackHost("[::1]"));
+    testing.assertTrue(isLoopbackHost("LOCALHOST"));
+    # Not loopback, and not to be mistaken for it by a prefix test.
+    testing.assertFalse(isLoopbackHost("vpn.example.com"));
+    testing.assertFalse(isLoopbackHost("127.evil.com"));
+    testing.assertFalse(isLoopbackHost("localhost.evil.com"));
+    testing.assertFalse(isLoopbackHost("1270.0.0.1"));
+    testing.assertFalse(isLoopbackHost(""));
+    # Dotted quad only: neither a "127."-prefixed host name nor an out-of-range
+    # octet may pose as a local address.
+    testing.assertFalse(isLoopbackHost("127.0.0.1.evil.com"));
+    testing.assertFalse(isLoopbackHost("127.999.0.1"));
+    testing.assertFalse(isLoopbackHost("127.0.0"));
+    testing.assertTrue(isLoopbackHost("127.255.255.254"));
+}
+
+func throwsOnPlainHttpHop() {
+    guardHttps("http://idp.example.com/login", []);
+}
+
+func testGuardHttpsRefusesPlainHttp() {
+    testing.assertThrows("throwsOnPlainHttpHop", "auth");
+}
+
+func testGuardHttpsAllowsTlsAndLoopback() {
+    # No throw is the assertion: https anywhere, http only to ourselves.
+    guardHttps("https://idp.example.com/login", []);
+    guardHttps("http://127.0.0.1:8080/saml", []);
+    testing.assertTrue(true);
+}
+
+func testPidIsOpenconnectRejectsAStranger() {
+    # Alive but not openconnect: the stale-pid-file case `disconnect` must not
+    # signal.
+    testing.assertFalse(pidIsOpenconnect(1));
+    testing.assertFalse(pidIsOpenconnect(0));
+    testing.assertFalse(pidIsOpenconnect(-1));
+}
+
 func testBrowserLaunchPrefixOmitsAnUnknownRuntimeDir() {
-    # uid -1 means the password database could not be read; a made-up
-    # /run/user/-1 would be worse than letting it default.
+    # uid -1 means the password database was unreadable; a made-up
+    # /run/user/-1 is worse than no value.
     def owner as BrowserOwner init BrowserOwner{name: "jdoe", uid: -1, home: "/home/jdoe"};
     def argv as list of string init browserLaunchPrefix($owner);
     testing.assertTrue(lists.contains($argv, "HOME=/home/jdoe"));

@@ -208,6 +208,49 @@ func xmlEscape(s as string) {
 }
 
 /**
+ * Whether a character may appear in an XML element name from gateway input.
+ * Narrower than XML's NameChar: ASCII only. The names a Cisco gateway asks for
+ * are `sso-token` and `sso-token-v2`.
+ * @param c {string} one character
+ * @param first {bool} true for the name's first position, where digits and
+ *     `.`/`-` are not allowed
+ * @return {bool} true when allowed in that position
+ * @since 0.4
+ */
+func isXmlNameChar(c as string, first as bool) {
+    def letters as string init "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ_";
+    if (strings.contains($letters, $c)) {
+        return true;
+    }
+    if ($first) {
+        return false;
+    }
+    return strings.contains("0123456789.-", $c);
+}
+
+/**
+ * Whether a string is safe to interpolate as an XML element name.
+ * The reply names one element after whatever the gateway asked for, and a tag
+ * name cannot be escaped the way text can.
+ * @param s {string} the candidate name
+ * @return {bool} true when usable as an element name
+ * @since 0.4
+ */
+func isXmlName(s as string) {
+    if ($s == "") {
+        return false;
+    }
+    def first as bool init true;
+    for (def c in strings.chars($s)) {
+        if (not isXmlNameChar($c, $first)) {
+            return false;
+        }
+        $first = false;
+    }
+    return true;
+}
+
+/**
  * Drop a leading <?xml ... ?> declaration.
  * xml.encode may prepend one, and an embedded fragment must not carry it.
  * @param s {string} serialized XML
@@ -531,6 +574,17 @@ func resolveProfile(r as args.Result) {
         not strings.startsWith($prof.server, "https://")) {
         $prof.server = "https://" + $prof.server;
     }
+    # Both directions carry a bearer credential: the SSO token in, the session
+    # cookie out. --insecure already means "unauthenticated channel accepted",
+    # so it is the only way through.
+    if (strings.startsWith($prof.server, "http://") and not $prof.insecure and
+        not isLoopbackHost(uri.parse($prof.server).host)) {
+        fail(
+            "config",
+            "refusing to authenticate over plain http://: the SSO token and the VPN\n" +
+                "  session cookie would cross the network in clear text.\n" +
+                "  Use https://, or pass --insecure if you really mean it.");
+    }
     return $prof;
 }
 
@@ -792,6 +846,14 @@ func parseAuthRequest(body as string) {
             "the gateway offered no <sso-v2-login> URL" +
                 " - it does not look like it authenticates with SAML");
     }
+    # The token is escaped; the element name around it cannot be. A gateway
+    # naming a field `a><b` would inject into the reply.
+    if (not isXmlName($ar.ssoField)) {
+        fail(
+            "gateway",
+            "the gateway asked for the token under '" + $ar.ssoField +
+                "', which is not a usable XML element name");
+    }
     if ($ar.loginFinalUrl == "") {
         $ar.loginFinalUrl = $ar.loginUrl;
     }
@@ -898,7 +960,11 @@ func launchBrowser(prof as Profile, url as string) {
         return false;
     }
     try {
-        def child as os.Process init os.spawn([$prof.browser, $url]);
+        # Nothing waits on this one, and a captured stream with no reader is a
+        # pipe waiting to fill.
+        def child as os.Process init os.spawn(
+            [$prof.browser, $url],
+            {"stdout": "discard", "stderr": "discard"});
         note($prof, io.sprintf("launched %s (pid %d)", $prof.browser, $child.pid));
         return true;
     } catch (e) {
@@ -988,8 +1054,8 @@ func browserSpeaksCdp(cmd as string) {
 
 /**
  * This process's effective uid.
- * There is no os.geteuid, so ask id(1). A failure reads as "not root", which
- * only costs the handoff below and leaves the behaviour we had before it.
+ * No os.geteuid, so ask id(1). A failure reads as "not root", which costs only
+ * the handoff below.
  * @return {int} the effective uid, or -1 when it could not be read
  * @since 0.4
  */
@@ -1065,12 +1131,11 @@ func unprivilegedAdvice(prof as Profile) {
 
 /**
  * Who the capture browser should run as.
- * A Chromium-based browser refuses to start as root - it exits immediately with
- * "Running as root without --no-sandbox is not supported" - so when the whole
- * program was started under sudo there is no browser left to drive over CDP.
- * Rather than weaken the browser that is about to perform the real login by
- * adding --no-sandbox, hand it back to the user who invoked sudo, which is also
- * where their identity-provider session and X/Wayland display already live.
+ * A Chromium-based browser exits at once as root ("Running as root without
+ * --no-sandbox is not supported"), so under sudo there is nothing to drive over
+ * CDP. Hand it to the invoking user - where the IdP session and the X/Wayland
+ * display already are - rather than adding --no-sandbox to the browser that
+ * performs the real login.
  * @param prof {Profile} the active profile, for the advice in the error
  * @return {BrowserOwner} the user to drop to, name "" to stay as we are
  * @throws {Error} kind "privilege" when we are root with nobody to drop to
@@ -1131,9 +1196,9 @@ func browserProfileDir(prof as Profile, owner as BrowserOwner) {
 }
 
 /**
- * Create the capture browser's profile directory, owned by whoever will use it.
- * Creating it as root inside someone else's home would leave a directory the
- * browser cannot write, so when we are handing off, mkdir goes through sudo too.
+ * Create the capture browser's profile directory, owned by its user.
+ * Created as root inside someone else's home it would be unwritable by the
+ * browser, so a handoff mkdirs through sudo too.
  * @param dir {string} the profile directory
  * @param owner {BrowserOwner} who the browser will run as
  * @throws {Error} kind "privilege" when the directory cannot be created
@@ -1155,10 +1220,10 @@ func makeBrowserProfileDir(dir as string, owner as BrowserOwner) {
 
 /**
  * The words that put the capture browser in front of the right user.
- * sudo resets the environment, so the handoff has to carry the session back in
- * by hand: DISPLAY / WAYLAND_DISPLAY name the display, and HOME and
- * XDG_RUNTIME_DIR have to become the target user's rather than root's.
- * XAUTHORITY is deliberately left out, so it defaults to their ~/.Xauthority.
+ * sudo resets the environment, so the handoff carries it back by hand:
+ * DISPLAY / WAYLAND_DISPLAY name the display; HOME and XDG_RUNTIME_DIR must
+ * become the target user's, not root's. XAUTHORITY is left out so it defaults
+ * to their ~/.Xauthority.
  * @param owner {BrowserOwner} who the browser must run as
  * @return {list of string} the prefix words, empty when running as ourselves
  * @since 0.4
@@ -1220,6 +1285,55 @@ func cdpEndpoint(port as int, waitMs as int) {
 }
 
 /**
+ * Whether a host is this machine talking to itself.
+ * Over loopback a credential never leaves the kernel, so the plain-http refusal
+ * has nothing to protect and would only rule out a local gateway. Syntactic on
+ * purpose: a DNS answer must not be able to widen it.
+ * @param host {string} the host part of a URL, brackets allowed for IPv6
+ * @return {bool} true for localhost, ::1 and 127.0.0.0/8
+ * @since 0.4
+ */
+func isLoopbackHost(host as string) {
+    def h as string init strings.lower($host);
+    if (strings.startsWith($h, "[") and strings.endsWith($h, "]")) {
+        $h = strings.substring($h, 1, len($h) - 1);
+    }
+    if ($h == "localhost" or $h == "::1") {
+        return true;
+    }
+    # Dotted quad only. A `127.` prefix test would accept `127.evil.com`, whose
+    # owner can point it anywhere.
+    def parts as list of string init strings.split($h, ".");
+    if (len($parts) != 4 or $parts[0] != "127") {
+        return false;
+    }
+    for (def p in $parts) {
+        if (not isOctet($p)) {
+            return false;
+        }
+    }
+    return true;
+}
+
+/**
+ * Whether a string is a decimal IPv4 octet.
+ * @param s {string} the candidate, at most 3 digits
+ * @return {bool} true for "0".."255"
+ * @since 0.4
+ */
+func isOctet(s as string) {
+    if ($s == "" or len($s) > 3) {
+        return false;
+    }
+    for (def c in strings.chars($s)) {
+        if (not strings.contains("0123456789", $c)) {
+            return false;
+        }
+    }
+    return convert.toInt($s) <= 255;
+}
+
+/**
  * Whether a cookie domain covers the gateway's host.
  * A cookie domain may be host-exact or dot-prefixed for a whole subtree.
  * @param domain {string} the cookie's domain
@@ -1277,6 +1391,53 @@ func cdpCookieOnce(conn as websocket.Conn, id as int, cookieName as string, host
 }
 
 /**
+ * Kill the capture browser, best effort.
+ * The fallback behind closeCaptureBrowser, and the whole cleanup when the
+ * failure predates the CDP connection.
+ * @param child {os.Process} the browser process
+ * @since 0.4
+ */
+func stopBrowser(child as os.Process) {
+    try {
+        os.kill($child);
+    } catch (e) { # lint-disable: L103
+        # Already gone, which is the wanted state.
+    }
+}
+
+/**
+ * Retire the capture browser and its connection.
+ * `Browser.close` first: the profile is persistent, and the IdP session - any
+ * "remember this device" included - only reaches disk on a clean shutdown. Kill
+ * is the fallback. Called on every exit path, so no failed login leaves a live
+ * SSO session behind an open debug port.
+ * @param conn {websocket.Conn} the CDP connection
+ * @param child {os.Process} the browser process
+ * @since 0.4
+ */
+func closeCaptureBrowser(conn as websocket.Conn, child as os.Process) {
+    try {
+        websocket.send($conn, '{"id":999999,"method":"Browser.close"}');
+    } catch (e) { # lint-disable: L103
+        # Socket may be dead already; the kill below still applies.
+    }
+    try {
+        websocket.close($conn);
+    } catch (e) { # lint-disable: L103
+        # Nothing to retire.
+    }
+    def waited as int init 0;
+    while ($waited < 3000) {
+        if (os.poll($child)) {
+            return;
+        }
+        time.sleep(time.fromMilliseconds(100));
+        $waited = $waited + 100;
+    }
+    stopBrowser($child);
+}
+
+/**
  * Launch the browser and wait for the gateway to hand it the SSO token.
  * You log in normally - password, second factor, whatever the identity provider
  * asks - and the cookie is read out of the browser rather than out of you.
@@ -1300,18 +1461,25 @@ func captureTokenViaCdp(prof as Profile, ar as AuthRequest) {
     def argv as list of string init browserLaunchPrefix($owner);
     $argv[] = $prof.browser;
     $argv[] = io.sprintf("--remote-debugging-port=%d", $prof.cdpPort);
-    $argv[] = "--remote-allow-origins=*";
+    # No --remote-allow-origins, deliberately: it disables the Origin check on
+    # the debug socket, and `*` lets any page in any local browser drive this one
+    # and read the HttpOnly cookie. Our client sends no Origin, so the check
+    # never applies to it. Do not add it back.
     $argv[] = "--user-data-dir=" + $dir;
     $argv[] = "--no-first-run";
     $argv[] = "--no-default-browser-check";
     $argv[] = $ar.loginUrl;
     note($prof, "launching " + strings.join($argv, " "));
 
-    def child as os.Process init os.spawn($argv);
+    # Explicit: the default is "capture", which buffers for an os.wait that never
+    # comes, and a browser is chatty enough to fill the pipe and wedge.
+    def child as os.Process init os.spawn($argv, {"stdout": "discard", "stderr": "discard"});
+    errdefer stopBrowser($child);
     note($prof, io.sprintf("browser pid %d", $child.pid));
 
     def wsUrl as string init cdpEndpoint($prof.cdpPort, 20000);
     def conn as websocket.Conn init websocket.connect($wsUrl);
+    errdefer closeCaptureBrowser($conn, $child);
 
     def host as string init uri.parse($prof.server).host;
     io.printf("\nLog in in the browser window that just opened.\n");
@@ -1324,14 +1492,12 @@ func captureTokenViaCdp(prof as Profile, ar as AuthRequest) {
         def token as string init cdpCookieOnce($conn, $id, $ar.tokenCookieName, $host);
         if ($token != "") {
             note($prof, "read " + $ar.tokenCookieName + " from the browser");
-            websocket.send($conn, '{"id":999999,"method":"Browser.close"}');
-            websocket.close($conn);
+            closeCaptureBrowser($conn, $child);
             return $token;
         }
         time.sleep(time.fromMilliseconds(1000));
         $waited = $waited + 1000;
     }
-    websocket.close($conn);
     fail(
         "auth",
         io.sprintf(
@@ -2038,6 +2204,32 @@ func guardSecondFactor(url as string, trail as list of string) {
 }
 
 /**
+ * Refuse to take the browserless walk anywhere but over TLS.
+ * The walk carries the password, and before it the CSRF tokens and SAML
+ * assertions that stand in for it, to whatever URL the previous page named -
+ * a `Location:` or a form `action`, neither of them ours. Checked on every hop,
+ * not just the first: an IdP that redirects to http, or serves a form whose
+ * action is http, would otherwise get the password in clear.
+ * @param url {string} the URL about to be fetched
+ * @param trail {list of string} the walk so far, for the message
+ * @throws {Error} kind "auth" when the URL is neither https nor loopback
+ * @since 0.4
+ */
+func guardHttps(url as string, trail as list of string) {
+    def u as uri.Uri init uri.parse($url);
+    def scheme as string init strings.lower($u.scheme);
+    if ($scheme == "https" or isLoopbackHost($u.host)) {
+        return;
+    }
+    fail(
+        "auth",
+        "the login tried to continue over " + $scheme + "://, not https:\n  " + $url +
+            "\n  Browserless mode submits your password to the form it reaches, so it will" +
+            "\n  not send anything over an unencrypted connection." +
+            "\n  Use --mode token, where the browser drives the login." + renderTrail($trail));
+}
+
+/**
  * Stop if the walk has come back to the same place twice.
  * Three visits to one URL is a cycle, not progress - end it while the trail is
  * still short enough to read.
@@ -2071,6 +2263,9 @@ func announceDebugDir(prof as Profile) {
         return;
     }
     fs.mkdirAll($prof.debugDir);
+    # 0700 before the first write: these pages carry replayable CSRF tokens and
+    # SAML assertions, and the default mode is world-readable.
+    fs.chmod($prof.debugDir, 0o700);
     io.eprintf("saving each page to %s - they contain CSRF tokens and SAML\n", $prof.debugDir);
     io.eprintf("assertions, so read before sharing and delete when done.\n");
 }
@@ -2153,6 +2348,9 @@ func renderTrail(trail as list of string) {
 func dumpPage(dir as string, step as int, url as string, body as string) {
     def name as string init path.join($dir, io.sprintf("%d.html", $step));
     fs.writeString($name, "<!-- " + $url + " -->\n" + $body);
+    # The 0700 directory is the real barrier; this keeps the mode if the file is
+    # copied out.
+    fs.chmod($name, 0o600);
 }
 
 /**
@@ -2604,6 +2802,8 @@ func browserlessToken(prof as Profile, ar as AuthRequest, creds as Credentials) 
     for (def step in 0..MAX_SSO_STEPS) {
         def where as string init $method + " " + $url;
         note($prof, io.sprintf("sso step %d: %s", $step + 1, $where));
+        # Before anything is sent: this is the hop that would carry it.
+        guardHttps($url, $trail);
         guardSecondFactor($url, $trail);
         guardNoLoop($trail, $where);
         $trail[] = $where;
@@ -2672,6 +2872,11 @@ func browserlessToken(prof as Profile, ar as AuthRequest, creds as Credentials) 
                     renderTrail($trail));
         }
         $url = uri.resolve($url, $action);
+        # Unconditional, not under --verbose: the form's action decides where the
+        # password goes, and the walk got here on someone else's redirects.
+        if ($wantsPassword) {
+            io.printf("Submitting the password for %s to %s\n", $creds.user, uri.parse($url).host);
+        }
         $method = "POST";
         if (strings.lower(attrOrEmpty($form, "method")) == "get") {
             $method = "GET";
@@ -2694,6 +2899,16 @@ func browserlessToken(prof as Profile, ar as AuthRequest, creds as Credentials) 
  * @since 0.2
  */
 func authenticateBrowserless(prof as Profile) {
+    # Other modes risk a token; this one submits the password. Skipping
+    # verification would hand it to whatever answers the connection.
+    if ($prof.insecure) {
+        fail(
+            "config",
+            "--insecure and --mode browserless are not allowed together: browserless\n" +
+                "  mode submits your password, and skipping certificate verification would\n" +
+                "  hand it to whatever answers the connection.\n" +
+                "  Drop --insecure, or use --mode token and let the browser do the login.");
+    }
     def ar as AuthRequest init probeGateway($prof, false);
     def creds as Credentials init gatherCredentials($prof);
     def token as string init browserlessToken($prof, $ar, $creds);
@@ -2842,6 +3057,30 @@ func pidAlive(pid as int) {
 }
 
 /**
+ * Whether a pid is a live openconnect, not merely a live process.
+ * The pid file outlives the tunnel and Linux reuses pids, so "something runs
+ * under that number" is not "the tunnel is up". `disconnect` signals it as
+ * root, so the alternative is killing whatever inherited the number.
+ * @param pid {int} the process id from the pid file
+ * @return {bool} true when that process is still openconnect
+ * @since 0.4
+ */
+func pidIsOpenconnect(pid as int) {
+    if (not pidAlive($pid)) {
+        return false;
+    }
+    try {
+        # NUL-separated argv; a substring test suffices.
+        return strings.contains(
+            fs.readString("/proc/" + convert.toString($pid) + "/cmdline"),
+            "openconnect");
+    } catch (e) {
+        # Exited between the two reads, or /proc is unreadable.
+        return false;
+    }
+}
+
+/**
  * The `status` command: report whether the tunnel is up.
  * @param r {args.Result} the parsed command line
  * @return {int} 0 when the tunnel is up, 1 when it is not
@@ -2850,7 +3089,7 @@ func pidAlive(pid as int) {
 func cmdStatus(r as args.Result) {
     def prof as Profile init resolveProfile($r);
     def pid as int init readPid($prof);
-    if (pidAlive($pid)) {
+    if (pidIsOpenconnect($pid)) {
         io.printf("up - openconnect pid %d (%s)\n", $pid, pidFileFor($prof));
         return 0;
     }
@@ -2868,7 +3107,17 @@ func cmdStatus(r as args.Result) {
 func cmdDisconnect(r as args.Result) {
     def prof as Profile init resolveProfile($r);
     def pid as int init readPid($prof);
-    if (not pidAlive($pid)) {
+    if (not pidIsOpenconnect($pid)) {
+        if (pidAlive($pid)) {
+            # Refusing on purpose: the tunnel is already gone and something else
+            # has inherited the number. Signalling it would kill a stranger.
+            io.printf(
+                "not disconnecting: pid %d in %s is no longer openconnect\n",
+                $pid,
+                pidFileFor($prof));
+            io.printf("  the tunnel is already down and the pid has been reused\n");
+            return 1;
+        }
         io.printf("nothing to disconnect (no live pid in %s)\n", pidFileFor($prof));
         return 1;
     }

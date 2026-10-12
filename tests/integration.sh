@@ -129,6 +129,17 @@ exits 'bad mode exits 2'    2 -- run_cli connect --mode wibble
 ok   'unknown flag names it' 'unknown flag --nosuchflag' -- run_cli connect --nosuchflag
 ok   'no server configured' 'no gateway URL' -- run_cli probe
 
+# --- refusals that protect a credential --------------------------------------
+# A remote http:// gateway is refused outright: the token and the session cookie
+# are bearer credentials. Loopback is exempt, which is what the rest of this
+# suite relies on, so both halves are checked here.
+ok 'plain http is refused' 'refusing to authenticate over plain http' -- \
+    run_cli probe --server "http://vpn.example.com/saml"
+ok 'loopback http is not refused' 'mock_saml' -- run_cli probe --server "$BASE"
+# The password and skipVerify must never combine.
+ok 'insecure refuses browserless' 'not allowed together' -- \
+    run_cli cookie --mode browserless --user jdoe --insecure --server "$BASE"
+
 # --- probe -------------------------------------------------------------------
 ok 'probe reports the tunnel group' 'mock_saml' -- run_cli probe --server "$BASE"
 ok 'probe reports the cookie name' 'acSamlv2Token' -- run_cli probe --server "$BASE"
