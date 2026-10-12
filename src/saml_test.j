@@ -454,6 +454,67 @@ func testBrowserSpeaksCdp() {
 }
 
 #
+# ------------------------------------------------- handing the browser back
+#
+
+# A chromium that is started as root exits before it opens the debug port, so
+# when the program itself runs under sudo the browser is handed to the invoking
+# user. These cover the two pure halves of that: where the profile lands, and
+# what the launch is prefixed with.
+
+func fixtureOwner() {
+    return BrowserOwner{name: "jdoe", uid: 1000, home: "/home/jdoe"};
+}
+
+func fixtureNobody() {
+    return BrowserOwner{name: "", uid: -1, home: ""};
+}
+
+func testBrowserProfileDirFollowsTheOwner() {
+    # An explicit setting wins whoever the browser ends up running as.
+    def p as Profile init fixtureProfile();
+    $p.browserProfile = "/tmp/fixed";
+    testing.assertEqual(browserProfileDir($p, fixtureNobody()), "/tmp/fixed");
+    testing.assertEqual(browserProfileDir($p, fixtureOwner()), "/tmp/fixed");
+
+    # Handing the browser off moves the profile into that user's home, so root
+    # never owns the session it is about to read a cookie out of.
+    testing.assertEqual(
+        browserProfileDir(fixtureProfile(), fixtureOwner()),
+        "/home/jdoe/.cache/" + APP + "/browser");
+}
+
+func testBrowserLaunchPrefixIsEmptyWhenUnprivileged() {
+    # The ordinary case: we are already the desktop user, so no sudo at all.
+    testing.assertEqual(len(browserLaunchPrefix(fixtureNobody())), 0);
+}
+
+func testBrowserLaunchPrefixHandsTheBrowserBack() {
+    def argv as list of string init browserLaunchPrefix(fixtureOwner());
+    testing.assertEqual($argv[0], "sudo");
+    # -n, because os.spawn gives the browser no terminal to prompt on.
+    testing.assertEqual($argv[1], "-n");
+    testing.assertEqual($argv[2], "-u");
+    testing.assertEqual($argv[3], "jdoe");
+    testing.assertEqual($argv[4], "env");
+
+    # sudo resets the environment, so the target user's own HOME and runtime
+    # directory have to be carried back in instead of root's being inherited.
+    testing.assertTrue(lists.contains($argv, "HOME=/home/jdoe"));
+    testing.assertTrue(lists.contains($argv, "XDG_RUNTIME_DIR=/run/user/1000"));
+    testing.assertFalse(lists.contains($argv, "HOME=/root"));
+}
+
+func testBrowserLaunchPrefixOmitsAnUnknownRuntimeDir() {
+    # uid -1 means the password database could not be read; a made-up
+    # /run/user/-1 would be worse than letting it default.
+    def owner as BrowserOwner init BrowserOwner{name: "jdoe", uid: -1, home: "/home/jdoe"};
+    def argv as list of string init browserLaunchPrefix($owner);
+    testing.assertTrue(lists.contains($argv, "HOME=/home/jdoe"));
+    testing.assertFalse(lists.contains($argv, "XDG_RUNTIME_DIR=/run/user/-1"));
+}
+
+#
 # ------------------------------------------------------- the openconnect side
 #
 

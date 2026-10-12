@@ -163,6 +163,21 @@ def struct Session {
     message as string
 };
 
+/**
+ * The unprivileged user the capture browser has to run as.
+ * A blank `name` is the normal case and means "run it as ourselves"; it is set
+ * only when the program itself is root and the browser must be handed back.
+ * @field name {string} login name, "" when we are already unprivileged
+ * @field uid {int} that user's numeric uid, -1 when it could not be read
+ * @field home {string} that user's home directory, "" when it could not be read
+ * @since 0.4
+ */
+def struct BrowserOwner {
+    name as string,
+    uid as int,
+    home as string
+};
+
 #
 # ---------------------------------------------------------------- small helpers
 #
@@ -972,20 +987,205 @@ func browserSpeaksCdp(cmd as string) {
 }
 
 /**
+ * This process's effective uid.
+ * There is no os.geteuid, so ask id(1). A failure reads as "not root", which
+ * only costs the handoff below and leaves the behaviour we had before it.
+ * @return {int} the effective uid, or -1 when it could not be read
+ * @since 0.4
+ */
+func effectiveUid() {
+    try {
+        def r as os.Result init os.run(["id", "-u"]);
+        if ($r.exitCode != 0) {
+            return -1;
+        }
+        return convert.toInt(strings.trim($r.stdout));
+    } catch (e) {
+        return -1;
+    }
+}
+
+/**
+ * Which user invoked us through a privilege helper, if any.
+ * sudo and doas both record the original login name in the environment.
+ * @return {string} the login name, "" when there is none or it was root itself
+ * @since 0.4
+ */
+func invokingUser() {
+    def who as string init os.getEnv("SUDO_USER");
+    if ($who == "") {
+        $who = os.getEnv("DOAS_USER");
+    }
+    if ($who == "root") {
+        return "";
+    }
+    return $who;
+}
+
+/**
+ * A user's uid and home directory, out of the password database.
+ * @param name {string} the login name to look up
+ * @return {BrowserOwner} the entry, with uid -1 and home "" when it is unknown
+ * @since 0.4
+ */
+func passwdEntry(name as string) {
+    def owner as BrowserOwner init BrowserOwner{name: $name, uid: -1, home: ""};
+    try {
+        def r as os.Result init os.run(["getent", "passwd", $name]);
+        if ($r.exitCode != 0) {
+            return $owner;
+        }
+        def fields as list of string init strings.split(strings.trim($r.stdout), ":");
+        if (len($fields) < 6) {
+            return $owner;
+        }
+        $owner.uid = convert.toInt($fields[2]);
+        $owner.home = $fields[5];
+    } catch (e) { # lint-disable: L103
+        # An unparsable entry is the same as no entry.
+    }
+    return $owner;
+}
+
+/**
+ * The advice that follows every "the capture browser cannot run as root".
+ * @param prof {Profile} the active profile, so the hint names the real setting
+ * @return {string} the indented advice lines
+ * @since 0.4
+ */
+func unprivilegedAdvice(prof as Profile) {
+    def how as string init "it escalates on its own";
+    if ($prof.sudo == "") {
+        $how = "set sudo = \"sudo\" so it can escalate on its own";
+    }
+    return "  Run " + APP + " as your normal desktop user: authentication never needs\n" +
+        "  root, only the tunnel does, and " + $how + ".\n" +
+        "  Or set capture = \"paste\" and read the cookie out of a browser you start.";
+}
+
+/**
+ * Who the capture browser should run as.
+ * A Chromium-based browser refuses to start as root - it exits immediately with
+ * "Running as root without --no-sandbox is not supported" - so when the whole
+ * program was started under sudo there is no browser left to drive over CDP.
+ * Rather than weaken the browser that is about to perform the real login by
+ * adding --no-sandbox, hand it back to the user who invoked sudo, which is also
+ * where their identity-provider session and X/Wayland display already live.
+ * @param prof {Profile} the active profile, for the advice in the error
+ * @return {BrowserOwner} the user to drop to, name "" to stay as we are
+ * @throws {Error} kind "privilege" when we are root with nobody to drop to
+ * @since 0.4
+ */
+func browserOwner(prof as Profile) {
+    if (effectiveUid() != 0) {
+        return BrowserOwner{name: "", uid: -1, home: ""};
+    }
+    def who as string init invokingUser();
+    if ($who == "") {
+        fail(
+            "privilege",
+            "a Chromium-based browser refuses to start as root, and there is no\n" +
+                "  SUDO_USER to hand it back to.\n" + unprivilegedAdvice($prof));
+    }
+    def owner as BrowserOwner init passwdEntry($who);
+    if ($owner.home == "") {
+        fail(
+            "privilege",
+            "a Chromium-based browser refuses to start as root, and " + $who +
+                " has no\n  home directory in the password database to run it from.\n" +
+                unprivilegedAdvice($prof));
+    }
+    def r as os.Result init os.run(["sudo", "-n", "-u", $who, "true"]);
+    if ($r.exitCode != 0) {
+        fail(
+            "privilege",
+            "a Chromium-based browser refuses to start as root, and `sudo -n -u " + $who +
+                "`\n  does not work here, so it cannot be handed back to you.\n" +
+                unprivilegedAdvice($prof));
+    }
+    return $owner;
+}
+
+/**
  * Where the capture browser keeps its profile.
  * Deliberately persistent and separate from your day-to-day profile: separate
  * so launching it never collides with a running browser, persistent so the
  * identity provider's session - and any "remember this device" the second
- * factor grants - survives to the next connect.
+ * factor grants - survives to the next connect. When the browser is handed back
+ * to an unprivileged user the profile follows it into that user's home, so root
+ * never ends up owning the session it is about to read a cookie out of.
  * @param prof {Profile} the active profile
+ * @param owner {BrowserOwner} who the browser will run as
  * @return {string} the profile directory
  * @since 0.3
  */
-func browserProfileDir(prof as Profile) {
+func browserProfileDir(prof as Profile, owner as BrowserOwner) {
     if ($prof.browserProfile != "") {
         return $prof.browserProfile;
     }
-    return path.join(os.homeDir(), ".cache", APP, "browser");
+    def home as string init os.homeDir();
+    if ($owner.home != "") {
+        $home = $owner.home;
+    }
+    return path.join($home, ".cache", APP, "browser");
+}
+
+/**
+ * Create the capture browser's profile directory, owned by whoever will use it.
+ * Creating it as root inside someone else's home would leave a directory the
+ * browser cannot write, so when we are handing off, mkdir goes through sudo too.
+ * @param dir {string} the profile directory
+ * @param owner {BrowserOwner} who the browser will run as
+ * @throws {Error} kind "privilege" when the directory cannot be created
+ * @since 0.4
+ */
+func makeBrowserProfileDir(dir as string, owner as BrowserOwner) {
+    if ($owner.name == "") {
+        fs.mkdirAll($dir);
+        return;
+    }
+    def r as os.Result init os.run(["sudo", "-n", "-u", $owner.name, "mkdir", "-p", $dir]);
+    if ($r.exitCode != 0) {
+        fail(
+            "privilege",
+            "could not create " + $dir + " as " + $owner.name + ": " +
+                strings.trim($r.stderr));
+    }
+}
+
+/**
+ * The words that put the capture browser in front of the right user.
+ * sudo resets the environment, so the handoff has to carry the session back in
+ * by hand: DISPLAY / WAYLAND_DISPLAY name the display, and HOME and
+ * XDG_RUNTIME_DIR have to become the target user's rather than root's.
+ * XAUTHORITY is deliberately left out, so it defaults to their ~/.Xauthority.
+ * @param owner {BrowserOwner} who the browser must run as
+ * @return {list of string} the prefix words, empty when running as ourselves
+ * @since 0.4
+ */
+func browserLaunchPrefix(owner as BrowserOwner) {
+    def argv as list of string init [];
+    if ($owner.name == "") {
+        return $argv;
+    }
+    $argv[] = "sudo";
+    $argv[] = "-n";
+    $argv[] = "-u";
+    $argv[] = $owner.name;
+    $argv[] = "env";
+    $argv[] = "HOME=" + $owner.home;
+    if ($owner.uid >= 0) {
+        $argv[] = io.sprintf("XDG_RUNTIME_DIR=/run/user/%d", $owner.uid);
+    }
+    def display as string init os.getEnv("DISPLAY");
+    if ($display != "") {
+        $argv[] = "DISPLAY=" + $display;
+    }
+    def wayland as string init os.getEnv("WAYLAND_DISPLAY");
+    if ($wayland != "") {
+        $argv[] = "WAYLAND_DISPLAY=" + $wayland;
+    }
+    return $argv;
 }
 
 /**
@@ -1087,10 +1287,18 @@ func cdpCookieOnce(conn as websocket.Conn, id as int, cookieName as string, host
  * @since 0.3
  */
 func captureTokenViaCdp(prof as Profile, ar as AuthRequest) {
-    def dir as string init browserProfileDir($prof);
-    fs.mkdirAll($dir);
+    def owner as BrowserOwner init browserOwner($prof);
+    def dir as string init browserProfileDir($prof, $owner);
+    makeBrowserProfileDir($dir, $owner);
+    if ($owner.name != "") {
+        note(
+            $prof,
+            "we are root and a Chromium-based browser will not start as root;" +
+                " handing the browser to " + $owner.name);
+    }
 
-    def argv as list of string init [$prof.browser];
+    def argv as list of string init browserLaunchPrefix($owner);
+    $argv[] = $prof.browser;
     $argv[] = io.sprintf("--remote-debugging-port=%d", $prof.cdpPort);
     $argv[] = "--remote-allow-origins=*";
     $argv[] = "--user-data-dir=" + $dir;
