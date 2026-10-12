@@ -24,9 +24,9 @@ fail() {
 }
 
 # The module constant is the source of truth.
-version=$(sed -n 's/^def const APP_VERSION as string init "\(.*\)";$/\1/p' src/saml.j)
+version=$(sed -n 's/^export def const APP_VERSION as string init "\(.*\)";$/\1/p' src/types.j)
 if [ -z "$version" ]; then
-    printf 'could not read APP_VERSION from src/saml.j\n' >&2
+    printf 'could not read APP_VERSION from src/types.j\n' >&2
     exit 1
 fi
 printf 'APP_VERSION            %s\n' "$version"
@@ -36,7 +36,11 @@ check() {
     [ "$1" = "$version" ] || fail "$2 is '${1:-<missing>}', expected '$version'"
 }
 
-check "$(sed -n 's/^ \* @version \(.*\)$/\1/p' src/saml.j | head -1)" 'src @version'
+# Every module carries @version; they all have to agree, so the check is over
+# the set rather than over one file.
+modvers=$(sed -n 's/^ \* @version \(.*\)$/\1/p' src/*.j | sort -u | tr '\n' ' ')
+printf '%-22s %s\n' 'src/*.j @version' "$modvers"
+[ "$modvers" = "$version " ] || fail "src/*.j @version is '$modvers', expected just '$version'"
 check "$(sed -n 's/^ \* @version \(.*\)$/\1/p' bin/openconnect-saml | head -1)" 'bin @version'
 check "$(sed -n 's/^\.TH .* "openconnect-saml \([^"]*\)".*$/\1/p' man/openconnect-saml.1)" 'man page'
 check "$(sed -n 's/^pkgver=\(.*\)$/\1/p' packaging/arch/PKGBUILD)" 'PKGBUILD pkgver'
@@ -46,7 +50,7 @@ check "$(sed -n 's/^pkgver=\(.*\)$/\1/p' packaging/arch/PKGBUILD)" 'PKGBUILD pkg
 check "$(sed -n 's/^version = "\(.*\)"$/\1/p' deck.toml | head -1)" 'deck.toml version'
 
 # The unit suite asserts APP_VERSION too, so it has to be told as well.
-check "$(sed -n 's/.*testing.assertEqual(APP_VERSION, "\(.*\)");.*/\1/p' src/saml_test.j)" 'unit test'
+check "$(sed -n 's/.*assertEqual(\(types\.\)\{0,1\}APP_VERSION, "\(.*\)");.*/\2/p' src/types_test.j)" 'unit test'
 
 if [ $# -ge 1 ]; then
     expected=${1#v}

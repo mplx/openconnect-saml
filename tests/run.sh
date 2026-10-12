@@ -12,7 +12,23 @@ set -eu
 
 cd "$(dirname "$0")/.."
 JENNIFER=${JENNIFER:-jennifer}
-SOURCES='src/saml.j src/saml_test.j bin/openconnect-saml tests/mock-gateway.j tests/check-docs.j'
+# Globbed, not listed: a new topic module - or a module without its overlay -
+# must not be able to arrive without the gates seeing it.
+SOURCES="$(echo src/*.j) bin/openconnect-saml tests/mock-gateway.j tests/check-docs.j"
+MODULES="$(ls src/*.j | grep -v '_test\.j$')"
+
+# Every module needs a co-located white-box overlay; a missing one is a gap in
+# the suite, not a module that happens to need no tests.
+missing=''
+for m in $MODULES; do
+    case $m in src/saml.j) continue;; esac   # the facade has nothing of its own
+    t="${m%.j}_test.j"
+    [ -f "$t" ] || missing="$missing $t"
+done
+if [ -n "$missing" ]; then
+    printf 'module(s) without a test overlay:%s\n' "$missing" >&2
+    exit 1
+fi
 
 step() { printf '\n== %s\n' "$1"; }
 
@@ -41,7 +57,9 @@ fi
 printf '  ok, no findings\n'
 
 step 'doc comments'
-"$JENNIFER" run tests/check-docs.j src/saml.j
+for m in $MODULES; do
+    "$JENNIFER" run tests/check-docs.j "$m"
+done
 "$JENNIFER" run tests/check-docs.j bin/openconnect-saml
 
 step 'versions'
@@ -52,7 +70,13 @@ else
 fi
 
 step 'unit tests'
-"$JENNIFER" test src/saml_test.j
+# One overlay per module, each spliced onto its own module.
+unitfail=0
+for t in src/*_test.j; do
+    printf '\n-- %s\n' "$t"
+    "$JENNIFER" test "$t" || unitfail=1
+done
+[ "$unitfail" = 0 ] || { printf 'unit tests failed\n' >&2; exit 1; }
 
 step 'integration tests'
 ./tests/integration.sh

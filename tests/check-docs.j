@@ -37,9 +37,14 @@ def undocumented as int init 0;
 def total as int init 0;
 for (def i in 0..len($lines)) {
     def line as string init $lines[$i];
+    # `export` prefixes any of them, and a missed prefix silently drops the
+    # construct from coverage rather than failing - so the list is the gate.
     def isDecl as bool init strings.startsWith($line, "func ") or
-        strings.startsWith($line, "export func ") or strings.startsWith($line, "def struct ") or
-        strings.startsWith($line, "def const ");
+        strings.startsWith($line, "export func ") or
+        strings.startsWith($line, "def struct ") or
+        strings.startsWith($line, "export def struct ") or
+        strings.startsWith($line, "def const ") or
+        strings.startsWith($line, "export def const ");
     if ($isDecl) {
         $total = $total + 1;
         if ($i == 0 or strings.trim($lines[$i - 1]) != "*/") {

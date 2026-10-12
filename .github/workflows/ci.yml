@@ -122,6 +122,23 @@ jobs:
             tar --zstd -tf "$pkg" | grep -qx "$want" \
               || { echo "missing from package: $want" >&2; exit 1; }
           done
+
+          # saml.j is a facade, so every topic module has to be in there too,
+          # and none of the test overlays. Note the cwd is packaging/arch, so the
+          # source glob is relative to the workspace, not to here.
+          for m in "$GITHUB_WORKSPACE"/src/*.j; do
+            case $m in *_test.j) continue;; esac
+            want="usr/lib/openconnect-saml/src/${m##*/}"
+            tar --zstd -tf "$pkg" | grep -qx "$want" \
+              || { echo "missing module from package: $want" >&2; exit 1; }
+          done
+          # `if`, not `&&`: grep exits 1 when it finds nothing, which is the
+          # case we want, and a bare `&&` would make that the step's status.
+          if tar --zstd -tf "$pkg" | grep -q '_test\.j$'; then
+            echo "test overlays must not be packaged" >&2; exit 1
+          fi
+          echo "all modules packaged, no overlays"
+
           tar --zstd -tvf "$pkg" | grep -q 'usr/bin/openconnect-saml ->' \
             || { echo "usr/bin entry is not a symlink" >&2; exit 1; }
           echo "package contents ok"

@@ -198,9 +198,17 @@ and SAML assertions, so the directory is created `0700` and the files `0600`).
 
 | | |
 |---|---|
-| `bin/openconnect-saml` | executable; imports the module, exits with its status |
-| `src/saml.j` | the program, as a module |
-| `src/saml_test.j` | unit tests - a white-box overlay spliced onto `saml.j` |
+| `bin/openconnect-saml` | executable; imports `src/saml.j`, exits with its status |
+| `src/saml.j` | entry point - a facade over `commands.j` |
+| `src/types.j` | the structs and constants every module shares |
+| `src/util.j` | errors, escaping, shell quoting, byte and string shaping |
+| `src/config.j` | config file plus command line, resolved into one `Profile` |
+| `src/protocol.j` | the `<config-auth>` exchange |
+| `src/browser.j` | SSO token out of a browser: DevTools capture, or paste |
+| `src/tunnel.j` | driving `openconnect`, the pid file, the privilege helper |
+| `src/browserless.j` | the HTML form walker |
+| `src/commands.j` | the subcommands, the flags, `run()` |
+| `src/<topic>_test.j` | one white-box overlay per module, spliced by `jennifer test` |
 | `tests/run.sh` | the whole suite; what CI and `makepkg` run |
 | `tests/integration.sh` | end-to-end tests against `tests/mock-gateway.j` |
 | `tests/check-versions.sh`, `tests/check-docs.j` | version and doc-comment gates |
@@ -212,8 +220,12 @@ tests/run.sh              # parse, format, lint, docs, versions, unit, integrati
 tests/run.sh 0.4.0        # ... and require that version, as a tag build does
 ```
 
-The logic sits in `src/saml.j` rather than the executable so `saml_test.j` can
-splice it and reach the private surface. The PKGBUILD sits in `packaging/arch/`
+The logic sits in `src/` rather than the executable so each module's
+`<topic>_test.j` can splice it and reach the private surface. `saml.j` stays the
+entry point because `bin/` and the installed layout both name that path, so the
+split is invisible from outside. Topic modules depend one way only:
+`types` <- `util` <- `config` / `protocol` / `browser` / `tunnel` /
+`browserless` <- `commands`. The PKGBUILD sits in `packaging/arch/`
 because makepkg builds in `$startdir/src` and `makepkg -C` empties it - at the
 root that would be this project's own `src/`. The mock gateway is Jennifer, and
 the integration tests stub `openconnect`, so the suite needs no VPN, browser or

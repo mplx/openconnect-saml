@@ -261,11 +261,12 @@ Command-line options override the profile.
 .
 .SH FILES
 .TP
-.I /usr/lib/openconnect\-saml/src/saml.j
-The program itself. The executable in
+.I /usr/lib/openconnect\-saml/src/
+The program: one module per topic, with
+.I saml.j
+as the entry point the executable imports by relative path. The executable in
 .I /usr/bin
-is a symlink to a thin wrapper beside this module, which it imports by relative
-path.
+is a symlink to a thin wrapper beside that directory.
 .TP
 .I ~/.config/openconnect\-saml/config.toml
 Profiles. Contains a gateway URL and possibly a certificate pin; keep it

@@ -66,15 +66,21 @@ check() {
 }
 
 package() {
-    # The program is two files - a thin executable and the module it imports as
-    # `../src/saml.j` - so the installed layout has to preserve that relative
-    # step. Both go under /usr/lib/$pkgname, and /usr/bin gets a symlink:
-    # Jennifer resolves a relative import against the script's *real* path, so
-    # the link works exactly like the file it points at.
+    # A thin executable plus the modules it imports as `../src/saml.j`, which
+    # imports its siblings in turn - so the installed layout has to preserve that
+    # relative step and carry every module, not just the entry point. All of them
+    # go under /usr/lib/$pkgname, and /usr/bin gets a symlink: Jennifer resolves a
+    # relative import against the script's *real* path, so the link works exactly
+    # like the file it points at.
     install -Dm755 "$_root/bin/openconnect-saml" \
         "$pkgdir/usr/lib/$pkgname/bin/openconnect-saml"
-    install -Dm644 "$_root/src/saml.j" \
-        "$pkgdir/usr/lib/$pkgname/src/saml.j"
+    # Globbed so a new topic module cannot be left out of the package; the test
+    # overlays are not shipped, since nothing at runtime splices them.
+    install -dm755 "$pkgdir/usr/lib/$pkgname/src"
+    for _m in "$_root"/src/*.j; do
+        case $_m in *_test.j) continue;; esac
+        install -Dm644 "$_m" "$pkgdir/usr/lib/$pkgname/src/${_m##*/}"
+    done
     install -dm755 "$pkgdir/usr/bin"
     ln -sf "../lib/$pkgname/bin/openconnect-saml" "$pkgdir/usr/bin/openconnect-saml"
 
