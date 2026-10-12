@@ -16,7 +16,7 @@ import "http.j" as http;
  * Program name, used in messages, the pid-file name and the config path.
  * @since 0.1
  */
-export def const APP as string init "openconnect-saml";
+export def const APP as string init "ocsaml";
 /**
  * This program's own version, reported by --version.
  * @since 0.1

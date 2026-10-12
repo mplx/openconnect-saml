@@ -17,14 +17,14 @@ func fixtureProfile() {
 
 func testRunFilePaths() {
     def p as types.Profile init fixtureProfile();
-    testing.assertEqual(pidFileFor($p), "/run/openconnect-saml-work.pid");
-    testing.assertEqual(logFileFor($p), "/run/openconnect-saml-work.log");
+    testing.assertEqual(pidFileFor($p), "/run/ocsaml-work.pid");
+    testing.assertEqual(logFileFor($p), "/run/ocsaml-work.log");
 }
 
 func testRunFilePathFallsBackToTheHost() {
     def p as types.Profile init fixtureProfile();
     $p.name = "";
-    testing.assertEqual(pidFileFor($p), "/run/openconnect-saml-vpn.example.com.pid");
+    testing.assertEqual(pidFileFor($p), "/run/ocsaml-vpn.example.com.pid");
 }
 
 def const CONFIG as string init 'default = "work"

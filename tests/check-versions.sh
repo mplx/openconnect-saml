@@ -41,8 +41,8 @@ check() {
 modvers=$(sed -n 's/^ \* @version \(.*\)$/\1/p' src/*.j | sort -u | tr '\n' ' ')
 printf '%-22s %s\n' 'src/*.j @version' "$modvers"
 [ "$modvers" = "$version " ] || fail "src/*.j @version is '$modvers', expected just '$version'"
-check "$(sed -n 's/^ \* @version \(.*\)$/\1/p' bin/openconnect-saml | head -1)" 'bin @version'
-check "$(sed -n 's/^\.TH .* "openconnect-saml \([^"]*\)".*$/\1/p' man/openconnect-saml.1)" 'man page'
+check "$(sed -n 's/^ \* @version \(.*\)$/\1/p' bin/ocsaml | head -1)" 'bin @version'
+check "$(sed -n 's/^\.TH .* "ocsaml \([^"]*\)".*$/\1/p' man/ocsaml.1)" 'man page'
 check "$(sed -n 's/^pkgver=\(.*\)$/\1/p' packaging/arch/PKGBUILD)" 'PKGBUILD pkgver'
 
 # deck.toml is what `jvc app install` records as the installed version, so a

@@ -1,4 +1,4 @@
-# openconnect-saml
+# ocsaml
 
 Connect to a Cisco AnyConnect gateway that authenticates with SAML/SSO, using
 your ordinary desktop browser and plain `openconnect`. Written in
@@ -9,10 +9,10 @@ push, hardware keys and saved passwords work as they always do. With a
 Chromium-based browser the resulting cookie is collected for you.
 
 ```sh
-openconnect-saml probe        # what does my gateway want?
-openconnect-saml connect      # log in and bring the tunnel up
-openconnect-saml status
-openconnect-saml disconnect
+ocsaml probe        # what does my gateway want?
+ocsaml connect      # log in and bring the tunnel up
+ocsaml status
+ocsaml disconnect
 ```
 
 ## Requirements
@@ -25,48 +25,53 @@ openconnect-saml disconnect
 
 ## Install
 
-With [jvc](https://jvc.jennifer-lang.dev/), from the `deck.toml` in this
-repository:
+### pacman
+
+From a [release](https://github.com/mplx/openconnect-saml/releases):
+
+```sh
+sudo pacman -U ./ocsaml-*-any.pkg.tar.zst
+```
+
+### makepkg
+
+Builds the same package from the tree, running the suite first:
+
+```sh
+cd packaging/arch && makepkg -si
+```
+
+### jvc
+
+Into `~/.local`, from the `deck.toml` in this repository:
 
 ```sh
 jvc app install https://github.com/mplx/openconnect-saml
 ```
 
-Installs the newest release tag into `~/.local/share/jvc/apps/` and links
-`~/.local/bin/openconnect-saml` at it. The tree is unpacked whole, so `bin/`
-still finds `../src/saml.j`. `--version "^0.4"` pins a range;
-`jvc app update` / `jvc app uninstall` take it from there. Nothing is vendored:
-every import is a bundled stdlib module.
+### By hand
 
-Not `--scope system` - this runs as your desktop user and escalates for the
-tunnel itself. See [Notes](#notes).
-
-An app install writes no configuration. Copy the template out once:
+Keep `bin/` and `src/` adjacent (`bin/` imports `../src/saml.j`; a symlink is
+fine, Jennifer resolves imports against the real path):
 
 ```sh
-install -Dm600 ~/.local/share/jvc/apps/openconnect-saml/config.example.toml \
-               ~/.config/openconnect-saml/config.toml
+install -Dm755 bin/ocsaml ~/.local/lib/ocsaml/bin/ocsaml
+install -Dm644 -t ~/.local/lib/ocsaml/src src/*.j
+ln -sf ../lib/ocsaml/bin/ocsaml ~/.local/bin/ocsaml
 ```
 
-As an OS package instead:
+Then a profile, unless you pass `--server` every time:
 
 ```sh
-cd packaging/arch && makepkg -si       # runs the test suite first
+install -Dm600 config.example.toml ~/.config/ocsaml/config.toml
 ```
 
-By hand, keeping the two files' relative layout (`bin/` imports `../src/saml.j`;
-a symlink is fine, Jennifer resolves imports against the real path):
-
-```sh
-install -Dm755 bin/openconnect-saml ~/.local/lib/openconnect-saml/bin/openconnect-saml
-install -Dm644 src/saml.j           ~/.local/lib/openconnect-saml/src/saml.j
-ln -sf ../lib/openconnect-saml/bin/openconnect-saml ~/.local/bin/openconnect-saml
-install -Dm600 config.example.toml  ~/.config/openconnect-saml/config.toml
-```
+Run it as your desktop user, never under `sudo`: it escalates for the tunnel on
+its own, and a Chromium-based browser will not start as root.
 
 ## Configuration
 
-`~/.config/openconnect-saml/config.toml`, or `--server` on the command line.
+`~/.config/ocsaml/config.toml`, or `--server` on the command line.
 Every top-level table is a profile; a `default` key picks one.
 
 ```toml
@@ -131,7 +136,7 @@ to get it automatically - the cookie is **`HttpOnly`**, so no page script or
 bookmarklet can see it.
 
 The capture browser uses its own persistent profile
-(`~/.cache/openconnect-saml/browser`): separate so it never collides with a
+(`~/.cache/ocsaml/browser`): separate so it never collides with a
 browser you have open, persistent so the IdP session and any "remember this
 device" survive to the next connect.
 
@@ -143,7 +148,7 @@ that cookie, or the final URL.
 ## Browserless mode
 
 ```sh
-openconnect-saml connect --mode browserless --user jdoe
+ocsaml connect --mode browserless --user jdoe
 ```
 
 Opt-in, no browser: the IdP's HTML forms are walked directly until the gateway
@@ -151,7 +156,7 @@ sets its cookie. Only works where the login is plain forms - **a second factor
 or a JavaScript page ends it**, naming what it hit. Duo is recognised by name.
 
 The password comes from `passwordCommand` (e.g. `pass show vpn/work`), else
-`$OPENCONNECT_SAML_PASSWORD`, else a hidden prompt. It is never read from the
+`$OCSAML_PASSWORD`, else a hidden prompt. It is never read from the
 config file.
 
 Two deliberate refusals: it **never resubmits credentials** (a second credential
@@ -174,7 +179,7 @@ and SAML assertions, so the directory is created `0700` and the files `0600`).
   yourself.
 - **Backgrounding.** openconnect daemonises only once the tunnel is up, so a
   successful `connect` means connected. Pid in
-  `/run/openconnect-saml-<profile>.pid`, output in `...log` - read that first
+  `/run/ocsaml-<profile>.pid`, output in `...log` - read that first
   when a tunnel drops. The redirect is load-bearing: a daemon holding the
   inherited pipes would never let the launching call return.
 - **The cookie never reaches the process list** - it goes over stdin.
@@ -198,7 +203,7 @@ and SAML assertions, so the directory is created `0700` and the files `0600`).
 
 | | |
 |---|---|
-| `bin/openconnect-saml` | executable; imports `src/saml.j`, exits with its status |
+| `bin/ocsaml` | executable; imports `src/saml.j`, exits with its status |
 | `src/saml.j` | entry point - a facade over `commands.j` |
 | `src/types.j` | the structs and constants every module shares |
 | `src/util.j` | errors, escaping, shell quoting, byte and string shaping |
@@ -233,7 +238,7 @@ root.
 
 ## Troubleshooting
 
-Start with `openconnect-saml probe -v`.
+Start with `ocsaml probe -v`.
 
 | | |
 |---|---|

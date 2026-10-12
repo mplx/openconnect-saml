@@ -84,7 +84,7 @@ func canPromptHidden() {
 /**
  * Work out the credentials for a browserless login.
  * The password comes from `passwordCommand` if set, else
- * $OPENCONNECT_SAML_PASSWORD, else a hidden prompt - so it need never be
+ * $OCSAML_PASSWORD, else a hidden prompt - so it need never be
  * written into the config file.
  * @param prof {Profile} the active profile
  * @return {Credentials} the username and password to submit
@@ -115,14 +115,14 @@ func gatherCredentials(prof as types.Profile) {
         $password = strings.trim($lines[0]);
     }
     if ($password == "") {
-        $password = os.getEnv("OPENCONNECT_SAML_PASSWORD");
+        $password = os.getEnv("OCSAML_PASSWORD");
     }
     if ($password == "") {
         if (not canPromptHidden()) {
             util.fail(
                 "auth",
                 "no terminal to prompt for a password on - set passwordCommand" +
-                    " in the profile, or $OPENCONNECT_SAML_PASSWORD");
+                    " in the profile, or $OCSAML_PASSWORD");
         }
         $password = promptHidden("Password for " + $user + ": ");
     }

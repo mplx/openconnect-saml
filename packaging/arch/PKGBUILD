@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: LGPL-3.0-only
 # Copyright (C) 2026 mplx <developer@mplx.eu>
 #
-# PKGBUILD for `openconnect-saml`, built from the project it sits inside rather
+# PKGBUILD for `ocsaml`, built from the project it sits inside rather
 # than from a remote: the project is local, so `makepkg -si` in this directory
 # is the whole workflow.
 #
@@ -12,10 +12,10 @@
 #
 # Maintainer: mplx <developer@mplx.eu>
 
-pkgname=openconnect-saml
+pkgname=ocsaml
 pkgver=0.4.0
 pkgrel=1
-pkgdesc='Connect to a Cisco AnyConnect VPN that authenticates with SAML/SSO, using your own browser'
+pkgdesc='OpenConnect wrapper for Cisco AnyConnect SAML/SSO, using your own browser'
 arch=('any')
 url='https://github.com/mplx/openconnect-saml'
 license=('LGPL-3.0-only')
@@ -72,8 +72,8 @@ package() {
     # go under /usr/lib/$pkgname, and /usr/bin gets a symlink: Jennifer resolves a
     # relative import against the script's *real* path, so the link works exactly
     # like the file it points at.
-    install -Dm755 "$_root/bin/openconnect-saml" \
-        "$pkgdir/usr/lib/$pkgname/bin/openconnect-saml"
+    install -Dm755 "$_root/bin/ocsaml" \
+        "$pkgdir/usr/lib/$pkgname/bin/ocsaml"
     # Globbed so a new topic module cannot be left out of the package; the test
     # overlays are not shipped, since nothing at runtime splices them.
     install -dm755 "$pkgdir/usr/lib/$pkgname/src"
@@ -82,15 +82,15 @@ package() {
         install -Dm644 "$_m" "$pkgdir/usr/lib/$pkgname/src/${_m##*/}"
     done
     install -dm755 "$pkgdir/usr/bin"
-    ln -sf "../lib/$pkgname/bin/openconnect-saml" "$pkgdir/usr/bin/openconnect-saml"
+    ln -sf "../lib/$pkgname/bin/ocsaml" "$pkgdir/usr/bin/ocsaml"
 
     # Man page.
-    install -Dm644 "$_root/man/openconnect-saml.1" \
-        "$pkgdir/usr/share/man/man1/openconnect-saml.1"
-    gzip -9n "$pkgdir/usr/share/man/man1/openconnect-saml.1"
+    install -Dm644 "$_root/man/ocsaml.1" \
+        "$pkgdir/usr/share/man/man1/ocsaml.1"
+    gzip -9n "$pkgdir/usr/share/man/man1/ocsaml.1"
 
     # Documentation, including the annotated config the user copies into
-    # ~/.config/openconnect-saml/config.toml. It is a template, not a config:
+    # ~/.config/ocsaml/config.toml. It is a template, not a config:
     # shipping it under /etc would invite pacman to treat a user's private
     # gateway settings as a package-owned file.
     install -Dm644 "$_root/README.md" \

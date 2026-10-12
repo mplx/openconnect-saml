@@ -27,11 +27,11 @@ import "./util.j" as util;
 
 /**
  * Where the config file lives.
- * @return {string} $OPENCONNECT_SAML_CONFIG if set, else ~/.config/openconnect-saml/config.toml
+ * @return {string} $OCSAML_CONFIG if set, else ~/.config/ocsaml/config.toml
  * @since 0.1
  */
 func configPath() {
-    def override as string init os.getEnv("OPENCONNECT_SAML_CONFIG");
+    def override as string init os.getEnv("OCSAML_CONFIG");
     if ($override != "") {
         return $override;
     }

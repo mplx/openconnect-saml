@@ -5,9 +5,9 @@
 # pragma-jennifer-capability: exec
 
 /**
- * openconnect-saml as a module: a facade over the topic modules.
+ * ocsaml as a module: a facade over the topic modules.
  *
- * `bin/openconnect-saml` and the installed layout both name this path, so it is
+ * `bin/ocsaml` and the installed layout both name this path, so it is
  * the entry point; everything real lives in commands.j and what that imports.
  *
  * @module saml

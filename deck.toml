@@ -1,5 +1,5 @@
 [package]
-name = "openconnect-saml"
+name = "ocsaml"
 version = "0.4.0"
 description = "Connect to a Cisco AnyConnect gateway that authenticates with SAML/SSO, using your ordinary desktop browser and plain openconnect."
 license = "LGPL-3.0-only"
@@ -7,18 +7,18 @@ authors = ["mplx <developer@mplx.eu>"]
 keywords = ["vpn", "anyconnect", "saml", "sso", "openconnect", "cisco"]
 
 # Host capabilities the code needs, matching the `# pragma-jennifer-capability`
-# lines in bin/openconnect-saml and src/saml.j. `net` is the <config-auth>
+# lines in bin/ocsaml and src/saml.j. `net` is the <config-auth>
 # exchange with the gateway and the CDP connection to the browser; `exec` is
 # every subprocess this program drives - openconnect itself, the browser, and
 # the id / getent / sudo lookups behind the privilege handoff.
 capabilities = ["net", "exec"]
 
-# openconnect-saml is an *app*, not a deck: an unscoped name and a runnable
+# ocsaml is an *app*, not a deck: an unscoped name and a runnable
 # entry script, so `jvc app install` puts it on PATH rather than vendoring it,
 # and `jvc publish` would refuse it (a published deck must be scoped). The entry
 # is a five-line shell around src/saml.j, which it imports relatively, so the
 # whole tree has to be unpacked together - which is what an app install does.
-bin = "bin/openconnect-saml"
+bin = "bin/ocsaml"
 
 # Project URLs by role. `deck` (this manifest's own location) is mandatory;
 # `homepage` and `manual` are optional.

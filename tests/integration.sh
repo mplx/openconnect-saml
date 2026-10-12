@@ -11,7 +11,7 @@
 set -uo pipefail
 
 cd "$(dirname "$0")/.."
-CLI="bin/openconnect-saml"
+CLI="bin/ocsaml"
 JENNIFER=${JENNIFER:-jennifer}
 TMP=$(mktemp -d)
 PORT_PLAIN=18081
@@ -22,6 +22,7 @@ PORT_FACTORS=18085
 
 pass=0
 fail=0
+skipped=0
 pids=()
 
 cleanup() {
@@ -67,6 +68,14 @@ ok() {
     fi
 }
 
+# skip NAME REASON
+# Reported, not silently dropped: a test that cannot run here is a gap, and the
+# summary has to say so.
+skip() {
+    printf 'SKIP %s (%s)\n' "$1" "$2"
+    skipped=$((skipped + 1))
+}
+
 # exits NAME EXPECTED-CODE -- command...
 exits() {
     local name=$1 want=$2; shift 3
@@ -81,7 +90,7 @@ exits() {
     fi
 }
 
-export OPENCONNECT_SAML_CONFIG=/nonexistent
+export OCSAML_CONFIG=/nonexistent
 
 # A stub openconnect, so the suite tests the command line this program builds
 # rather than whether a VPN client happens to be installed. It answers the two
@@ -168,14 +177,14 @@ ok 'print keeps the cookie off the argv' "printf '%s\\n' 'SESSION-abc123'" -- pr
 
 # --- browserless -------------------------------------------------------------
 bl() {
-    OPENCONNECT_SAML_PASSWORD=$1 run_cli cookie --server "$2" \
+    OCSAML_PASSWORD=$1 run_cli cookie --server "$2" \
         --mode browserless --user "${3:-jdoe}"
 }
 ok 'browserless logs in'        "SESSION-abc123" -- bl hunter2 "$BASE"
 ok 'browserless rejects a bad password' 'rejected the credentials' -- bl wrong "$BASE"
 ok 'browserless stops at Duo'   'reached Duo' -- bl hunter2 "http://127.0.0.1:$PORT_DUO/saml"
 ok 'browserless shows the trail' '1) GET' -- bl hunter2 "http://127.0.0.1:$PORT_DUO/saml"
-no_user() { OPENCONNECT_SAML_PASSWORD=x run_cli cookie --server "$BASE" --mode browserless; }
+no_user() { OCSAML_PASSWORD=x run_cli cookie --server "$BASE" --mode browserless; }
 ok 'browserless needs a username' 'no username' -- no_user
 
 # --- external-browser handoff ------------------------------------------------
@@ -187,7 +196,7 @@ ok 'auto picks external when the gateway offers it' "pin-sha256:STUB" -- \
 # --- choosing a second factor ------------------------------------------------
 FACTORS="http://127.0.0.1:$PORT_FACTORS/saml"
 blf() {
-    OPENCONNECT_SAML_PASSWORD=hunter2 run_cli cookie --server "$FACTORS" \
+    OCSAML_PASSWORD=hunter2 run_cli cookie --server "$FACTORS" \
         --mode browserless --user jdoe "$@"
 }
 ok 'factor picks the named control' "SESSION-abc123" -- blf --factor passcode
@@ -214,15 +223,31 @@ echo "Running as root without --no-sandbox is not supported." >&2
 exit 1
 FAKE
 chmod +x "$TMP/fakebin/chromium"
-ok 'a browser that exits is reported as such' 'exited without opening its debug port' -- \
-    run_cli cookie --server "$BASE" --capture cdp --browser "$TMP/fakebin/chromium"
-ok 'and quotes what the browser said' 'without --no-sandbox is not supported' -- \
-    run_cli cookie --server "$BASE" --capture cdp --browser "$TMP/fakebin/chromium"
+# Whether the browser is even reached depends on who we are: as root with no
+# SUDO_USER the capture refuses up front, which is a different assertion. CI runs
+# this container as root, so both cases are covered, one per euid.
+if [ "$(id -u)" = 0 ] && [ -z "${SUDO_USER:-}" ]; then
+    skip 'a browser that exits is reported as such' 'needs a non-root euid'
+    skip 'and quotes what the browser said' 'needs a non-root euid'
+    ok 'as root with no SUDO_USER the capture refuses up front' \
+        'SUDO_USER to hand it back to' -- \
+        run_cli cookie --server "$BASE" --capture cdp --browser "$TMP/fakebin/chromium"
+    ok 'and says to run as your desktop user' 'as your normal desktop user' -- \
+        run_cli cookie --server "$BASE" --capture cdp --browser "$TMP/fakebin/chromium"
+else
+    ok 'a browser that exits is reported as such' 'exited without opening its debug port' -- \
+        run_cli cookie --server "$BASE" --capture cdp --browser "$TMP/fakebin/chromium"
+    ok 'and quotes what the browser said' 'without --no-sandbox is not supported' -- \
+        run_cli cookie --server "$BASE" --capture cdp --browser "$TMP/fakebin/chromium"
+    skip 'as root with no SUDO_USER the capture refuses up front' 'needs euid 0'
+    skip 'and says to run as your desktop user' 'needs euid 0'
+fi
 
 # --- status / disconnect with nothing running --------------------------------
 exits 'status down exits 1'      1 -- run_cli status --server "$BASE"
 ok    'disconnect finds nothing' 'nothing to disconnect' -- \
     run_cli disconnect --server "$BASE"
 
-printf '\n%d passed, %d failed, %d total\n' "$pass" "$fail" "$((pass + fail))"
+printf '\n%d passed, %d failed, %d skipped, %d total\n' \
+    "$pass" "$fail" "$skipped" "$((pass + fail + skipped))"
 [ "$fail" -eq 0 ]

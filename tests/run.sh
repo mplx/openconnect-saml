@@ -14,7 +14,7 @@ cd "$(dirname "$0")/.."
 JENNIFER=${JENNIFER:-jennifer}
 # Globbed, not listed: a new topic module - or a module without its overlay -
 # must not be able to arrive without the gates seeing it.
-SOURCES="$(echo src/*.j) bin/openconnect-saml tests/mock-gateway.j tests/check-docs.j"
+SOURCES="$(echo src/*.j) bin/ocsaml tests/mock-gateway.j tests/check-docs.j"
 MODULES="$(ls src/*.j | grep -v '_test\.j$')"
 
 # Every module needs a co-located white-box overlay; a missing one is a gap in
@@ -60,7 +60,7 @@ step 'doc comments'
 for m in $MODULES; do
     "$JENNIFER" run tests/check-docs.j "$m"
 done
-"$JENNIFER" run tests/check-docs.j bin/openconnect-saml
+"$JENNIFER" run tests/check-docs.j bin/ocsaml
 
 step 'versions'
 if [ $# -ge 1 ]; then

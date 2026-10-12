@@ -1,18 +1,18 @@
 .\" SPDX-License-Identifier: LGPL-3.0-only
 .\" SPDX-FileCopyrightText: Copyright (C) 2026 mplx <developer@mplx.eu>
-.TH OPENCONNECT-SAML 1 "2026-10-12" "openconnect-saml 0.4.0" "User Commands"
+.TH OCSAML 1 "2026-10-12" "ocsaml 0.4.0" "User Commands"
 .
 .SH NAME
-openconnect-saml \- connect to a Cisco AnyConnect VPN that authenticates with SAML/SSO
+ocsaml \- connect to a Cisco AnyConnect VPN that authenticates with SAML/SSO
 .
 .SH SYNOPSIS
-.B openconnect-saml
+.B ocsaml
 .I command
 .RI [ profile ]
 .RI [ options ]
 .
 .SH DESCRIPTION
-.B openconnect-saml
+.B ocsaml
 drives the SAML/SSO login of a Cisco AnyConnect gateway and hands the resulting
 session cookie to
 .BR openconnect (8).
@@ -234,9 +234,9 @@ visible at a glance.
 .
 .SH CONFIGURATION
 Read from
-.I ~/.config/openconnect\-saml/config.toml
+.I ~/.config/ocsaml/config.toml
 unless
-.B $OPENCONNECT_SAML_CONFIG
+.B $OCSAML_CONFIG
 names another file. Every top-level table is a profile; a top-level
 .B default
 key names the one to use when none is given on the command line. A file holding
@@ -261,39 +261,39 @@ Command-line options override the profile.
 .
 .SH FILES
 .TP
-.I /usr/lib/openconnect\-saml/src/
+.I /usr/lib/ocsaml/src/
 The program: one module per topic, with
 .I saml.j
 as the entry point the executable imports by relative path. The executable in
 .I /usr/bin
 is a symlink to a thin wrapper beside that directory.
 .TP
-.I ~/.config/openconnect\-saml/config.toml
+.I ~/.config/ocsaml/config.toml
 Profiles. Contains a gateway URL and possibly a certificate pin; keep it
 private.
 .TP
-.I ~/.cache/openconnect\-saml/browser
+.I ~/.cache/ocsaml/browser
 Profile directory for the capture browser. Separate from your everyday browser
 profile so the two never collide, and persistent so the identity provider's
 session survives to the next connect.
 .TP
-.IR /run/openconnect\-saml\- <profile> .pid
+.IR /run/ocsaml\- <profile> .pid
 The tunnel's process id, written by
 .BR openconnect (8)
 and read by
 .BR disconnect .
 .TP
-.IR /run/openconnect\-saml\- <profile> .log
+.IR /run/ocsaml\- <profile> .log
 Output of the backgrounded
 .BR openconnect (8).
 Read this first when a tunnel drops or will not start.
 .
 .SH ENVIRONMENT
 .TP
-.B OPENCONNECT_SAML_CONFIG
+.B OCSAML_CONFIG
 Path to the configuration file, overriding the default location.
 .TP
-.B OPENCONNECT_SAML_PASSWORD
+.B OCSAML_PASSWORD
 Password for
 .B browserless
 mode, used when
@@ -321,7 +321,7 @@ Ask a gateway what it wants:
 .PP
 .RS 4
 .EX
-openconnect\-saml probe \-\-server https://vpn.example.com/saml
+ocsaml probe \-\-server https://vpn.example.com/saml
 .EE
 .RE
 .PP
@@ -331,7 +331,7 @@ first:
 .PP
 .RS 4
 .EX
-sudo \-v && openconnect\-saml connect
+sudo \-v && ocsaml connect
 .EE
 .RE
 .PP
@@ -339,7 +339,7 @@ Connect without a browser, taking the password from a password store:
 .PP
 .RS 4
 .EX
-openconnect\-saml connect \-\-mode browserless \-\-user jdoe \e
+ocsaml connect \-\-mode browserless \-\-user jdoe \e
     \-\-password\-command "pass show vpn/work"
 .EE
 .RE
@@ -348,7 +348,7 @@ Authenticate only, and use the result yourself:
 .PP
 .RS 4
 .EX
-eval "$(openconnect\-saml cookie)"
+eval "$(ocsaml cookie)"
 printf '%s\en' "$COOKIE" | sudo openconnect \-\-cookie\-on\-stdin \e
     \-\-servercert "$FINGERPRINT" "$CONNECT_URL"
 .EE

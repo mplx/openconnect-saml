@@ -115,10 +115,10 @@ jobs:
           got=$(tar --zstd -xOf "$pkg" .PKGINFO | sed -n 's/^pkgver = \(.*\)-[0-9]*$/\1/p')
           test "$got" = "${GITHUB_REF_NAME#v}" \
             || { echo "package says $got, tag says ${GITHUB_REF_NAME#v}" >&2; exit 1; }
-          for want in usr/bin/openconnect-saml \
-                      usr/lib/openconnect-saml/bin/openconnect-saml \
-                      usr/lib/openconnect-saml/src/saml.j \
-                      usr/share/man/man1/openconnect-saml.1.gz; do
+          for want in usr/bin/ocsaml \
+                      usr/lib/ocsaml/bin/ocsaml \
+                      usr/lib/ocsaml/src/saml.j \
+                      usr/share/man/man1/ocsaml.1.gz; do
             tar --zstd -tf "$pkg" | grep -qx "$want" \
               || { echo "missing from package: $want" >&2; exit 1; }
           done
@@ -128,7 +128,7 @@ jobs:
           # source glob is relative to the workspace, not to here.
           for m in "$GITHUB_WORKSPACE"/src/*.j; do
             case $m in *_test.j) continue;; esac
-            want="usr/lib/openconnect-saml/src/${m##*/}"
+            want="usr/lib/ocsaml/src/${m##*/}"
             tar --zstd -tf "$pkg" | grep -qx "$want" \
               || { echo "missing module from package: $want" >&2; exit 1; }
           done
@@ -139,7 +139,7 @@ jobs:
           fi
           echo "all modules packaged, no overlays"
 
-          tar --zstd -tvf "$pkg" | grep -q 'usr/bin/openconnect-saml ->' \
+          tar --zstd -tvf "$pkg" | grep -q 'usr/bin/ocsaml ->' \
             || { echo "usr/bin entry is not a symlink" >&2; exit 1; }
           echo "package contents ok"
 
@@ -153,8 +153,8 @@ jobs:
           # no build output, and no config.toml, which is gitignored precisely
           # because it holds someone's gateway.
           git archive --format=tar.gz \
-            --prefix="openconnect-saml-${ver}/" \
-            -o "release/openconnect-saml-${ver}.tar.gz" HEAD
+            --prefix="ocsaml-${ver}/" \
+            -o "release/ocsaml-${ver}.tar.gz" HEAD
 
           # Sidecar checksums, in the "HASH  FILENAME" form a PKGBUILD's
           # sha256sums can be filled from directly.

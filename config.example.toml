@@ -1,7 +1,7 @@
-# openconnect-saml configuration
-# Copy to ~/.config/openconnect-saml/config.toml and edit.
+# ocsaml configuration
+# Copy to ~/.config/ocsaml/config.toml and edit.
 
-# Which profile `openconnect-saml connect` uses when you name none.
+# Which profile `ocsaml connect` uses when you name none.
 # Not needed if the file holds exactly one profile.
 default = "work"
 
@@ -32,7 +32,7 @@ browser = "chromium"
 # capture = "auto"
 # cdpPort = 9333
 # captureTimeout = 300
-# browserProfile = "~/.cache/openconnect-saml/browser"
+# browserProfile = "~/.cache/ocsaml/browser"
 
 # How to become root for the tunnel itself (authentication never needs it).
 # "doas" works too; set it to "" if you already run as root.
@@ -45,7 +45,7 @@ browser = "chromium"
 # user = "jdoe"
 #
 # The password is never read from this file. It comes from passwordCommand if
-# set, else $OPENCONNECT_SAML_PASSWORD, else a hidden prompt.
+# set, else $OCSAML_PASSWORD, else a hidden prompt.
 # passwordCommand = "pass show vpn/i-med"
 # passwordCommand = "secret-tool lookup service vpn"
 #
