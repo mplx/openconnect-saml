@@ -68,6 +68,9 @@ browser = "chromium"
 # picky about client versions.
 # version = "4.10.05111"
 
-# Skip TLS verification while authenticating. Last resort for a gateway with a
-# private-CA certificate; it does not affect the tunnel itself.
+# Skip TLS verification while authenticating, and allow a plain http:// server
+# above. For a private-CA gateway; does not affect the tunnel, which is pinned
+# separately. The SSO token and session cookie become readable and forgeable by
+# anyone on the path, so `--mode browserless` refuses to run with it. A remote
+# http:// server is refused without it; loopback is exempt.
 # insecure = false

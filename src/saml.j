@@ -30,6 +30,7 @@ use strings;
 use maps;
 use lists;
 use convert;
+use binary;
 use term;
 use time;
 use json;
@@ -76,6 +77,28 @@ def const HTTP_TIMEOUT_MS as int init 30000;
  * @since 0.2
  */
 def const MAX_SSO_STEPS as int init 12;
+
+/**
+ * Per-receive read timeout on the CDP socket, in milliseconds.
+ * A reply to Storage.getCookies arrives in milliseconds, so this only bounds
+ * the wait on a browser that has stopped answering.
+ * @since 0.4
+ */
+def const CDP_RECEIVE_MS as int init 5000;
+
+/**
+ * How many CDP frames one cookie poll will read before giving up on its reply.
+ * The browser interleaves events with replies, so some skipping is normal; an
+ * unbounded loop would sit inside one iteration of the caller's timeout.
+ * @since 0.4
+ */
+def const MAX_CDP_READS as int init 200;
+
+/**
+ * How many trailing lines of the browser's stderr an error message carries.
+ * @since 0.4
+ */
+def const BROWSER_LOG_LINES as int init 5;
 
 /**
  * One VPN target: everything `connect` needs that is not discovered at runtime.
@@ -1027,7 +1050,10 @@ func extractToken(raw as string, cookieName as string) {
                 return strings.trim(strings.substring($kv, $i + 1));
             }
         }
-        return $s;
+        # A Cookie header without the cookie we asked for. Returning the whole
+        # header would send the gateway a token made of somebody else's cookies;
+        # "" reaches the caller's "no token given" instead.
+        return "";
     }
 
     def prefix as string init $cookieName + "=";
@@ -1257,11 +1283,13 @@ func browserLaunchPrefix(owner as BrowserOwner) {
  * The browser's CDP WebSocket endpoint, once it is listening.
  * @param port {int} the remote-debugging port
  * @param waitMs {int} how long to keep trying
+ * @param child {os.Process} the browser, polled so an early exit is not waited out
+ * @param logPath {string} file the browser's stderr went to, quoted on failure
  * @return {string} the browser-level WebSocket URL
- * @throws {Error} kind "auth" when the browser never opens the port
+ * @throws {Error} kind "auth" when the browser exits, or never opens the port
  * @since 0.3
  */
-func cdpEndpoint(port as int, waitMs as int) {
+func cdpEndpoint(port as int, waitMs as int, child as os.Process, logPath as string) {
     def url as string init io.sprintf("http://127.0.0.1:%d/json/version", $port);
     def waited as int init 0;
     while ($waited < $waitMs) {
@@ -1273,6 +1301,15 @@ func cdpEndpoint(port as int, waitMs as int) {
         } catch (e) { # lint-disable: L103
             # Not listening yet; the browser is still starting.
         }
+        # A browser that has already exited will never open the port, and its
+        # stderr says why. Report that instead of waiting out the timeout and
+        # then guessing at a stale profile.
+        if (os.poll($child)) {
+            fail(
+                "auth",
+                io.sprintf("the browser exited without opening its debug port %d.", $port) +
+                    browserSaid($logPath));
+        }
         time.sleep(time.fromMilliseconds(250));
         $waited = $waited + 250;
     }
@@ -1281,7 +1318,7 @@ func cdpEndpoint(port as int, waitMs as int) {
         io.sprintf(
             "the browser never opened its debug port %d." +
                 " Is it already running with a different profile?",
-            $port));
+            $port) + browserSaid($logPath));
 }
 
 /**
@@ -1365,8 +1402,11 @@ func domainCovers(domain as string, host as string) {
  */
 func cdpCookieOnce(conn as websocket.Conn, id as int, cookieName as string, host as string) {
     websocket.send($conn, io.sprintf('{"id":%d,"method":"Storage.getCookies"}', $id));
-    # The browser interleaves events with replies; read until ours comes back.
-    while (true) {
+    # The browser interleaves events with replies; read until ours comes back,
+    # but not forever - see MAX_CDP_READS.
+    def reads as int init 0;
+    while ($reads < MAX_CDP_READS) {
+        $reads = $reads + 1;
         def m as websocket.Message init websocket.receive($conn);
         if ($m.kind != "text") {
             continue;
@@ -1388,6 +1428,48 @@ func cdpCookieOnce(conn as websocket.Conn, id as int, cookieName as string, host
         }
         return "";
     }
+    # Budget spent without our reply. Treat it as "not set yet" and let the
+    # caller's deadline decide whether to ask again.
+    return "";
+}
+
+/**
+ * Delete a file, best effort.
+ * @param path {string} the file to remove
+ * @since 0.4
+ */
+func removeQuietly(path as string) {
+    try {
+        fs.remove($path);
+    } catch (e) { # lint-disable: L103
+        # Never existed, or someone else got there first.
+    }
+}
+
+/**
+ * The tail of the capture browser's stderr, for an error message.
+ * The one line that matters is usually the browser's own refusal to start
+ * ("Running as root without --no-sandbox is not supported"), and it is the last
+ * thing it says; the lines before it are GPU and GCM noise.
+ * @param logPath {string} file the browser's stderr was redirected to
+ * @return {string} the lines, indented and prefixed, or "" when it said nothing
+ * @since 0.4
+ */
+func browserSaid(logPath as string) {
+    def raw as string init strings.trim(readLog($logPath));
+    if ($raw == "") {
+        return "";
+    }
+    def lines as list of string init strings.split($raw, "\n");
+    def from as int init 0;
+    if (len($lines) > BROWSER_LOG_LINES) {
+        $from = len($lines) - BROWSER_LOG_LINES;
+    }
+    def out as string init "";
+    for (def i in $from..len($lines)) {
+        $out = $out + "\n    " + strings.trim($lines[$i]);
+    }
+    return "\n  the browser said:" + $out;
 }
 
 /**
@@ -1471,32 +1553,55 @@ func captureTokenViaCdp(prof as Profile, ar as AuthRequest) {
     $argv[] = $ar.loginUrl;
     note($prof, "launching " + strings.join($argv, " "));
 
-    # Explicit: the default is "capture", which buffers for an os.wait that never
-    # comes, and a browser is chatty enough to fill the pipe and wedge.
-    def child as os.Process init os.spawn($argv, {"stdout": "discard", "stderr": "discard"});
+    # stdout discarded, stderr to a file: the default is "capture", which buffers
+    # for an os.wait that never comes, and a browser is chatty enough to fill the
+    # pipe and wedge. The file is what lets a failure say why the browser died
+    # rather than only that the port never opened.
+    def logPath as string init fs.makeTempFile();
+    defer removeQuietly($logPath);
+    def child as os.Process init os.spawn($argv, {"stdout": "discard", "stderr": $logPath});
     errdefer stopBrowser($child);
     note($prof, io.sprintf("browser pid %d", $child.pid));
 
-    def wsUrl as string init cdpEndpoint($prof.cdpPort, 20000);
-    def conn as websocket.Conn init websocket.connect($wsUrl);
+    def wsUrl as string init cdpEndpoint($prof.cdpPort, 20000, $child, $logPath);
+    def conn as websocket.Conn init websocket.connectWith($wsUrl, CDP_RECEIVE_MS);
     errdefer closeCaptureBrowser($conn, $child);
 
     def host as string init uri.parse($prof.server).host;
     io.printf("\nLog in in the browser window that just opened.\n");
     io.printf("Waiting for %s to be set on %s ...\n", $ar.tokenCookieName, $host);
 
-    def waited as int init 0;
+    # A wall-clock deadline, not a tally of sleeps: the poll itself takes time,
+    # so adding 1000 per turn made the real wait longer than captureTimeout and
+    # the "gave up after N seconds" message wrong.
+    def deadline as time.Time init time.add(
+        time.now(),
+        time.fromMilliseconds($prof.captureTimeoutMs));
     def id as int init 0;
-    while ($waited < $prof.captureTimeoutMs) {
+    while (time.before(time.now(), $deadline)) {
         $id = $id + 1;
-        def token as string init cdpCookieOnce($conn, $id, $ar.tokenCookieName, $host);
+        if (os.poll($child)) {
+            fail("auth", "the browser closed before the login finished." + browserSaid($logPath));
+        }
+        def token as string init "";
+        try {
+            $token = cdpCookieOnce($conn, $id, $ar.tokenCookieName, $host);
+        } catch (e) {
+            # The socket stopped answering. If the browser is gone, that is the
+            # explanation worth printing; otherwise let the real error out.
+            if (os.poll($child)) {
+                fail(
+                    "auth",
+                    "the browser closed before the login finished." + browserSaid($logPath));
+            }
+            throw $e;
+        }
         if ($token != "") {
             note($prof, "read " + $ar.tokenCookieName + " from the browser");
             closeCaptureBrowser($conn, $child);
             return $token;
         }
         time.sleep(time.fromMilliseconds(1000));
-        $waited = $waited + 1000;
     }
     fail(
         "auth",
@@ -1749,9 +1854,10 @@ func printCommand(prof as Profile, sess as Session) {
 }
 
 /**
- * Read back what the backgrounded openconnect wrote, best effort.
- * The file belongs to root; an unreadable one is not worth an error of its own,
- * since the caller is usually already reporting a failure.
+ * Read a log a child process wrote, best effort.
+ * Used for the backgrounded openconnect's output and the capture browser's
+ * stderr. Either may be unreadable, which is not worth an error of its own: the
+ * caller is already reporting a failure.
  * @param path {string} the log file
  * @return {string} its contents, or "" if it cannot be read
  * @since 0.1
@@ -1991,7 +2097,47 @@ def struct Hop {
 };
 
 /**
+ * Drop the last whole UTF-8 character from a byte accumulator.
+ * Backspace removes a character, not a byte: a continuation byte (10xxxxxx) is
+ * half of one, so it goes with its lead byte.
+ * @param acc {list of int} the bytes typed so far
+ * @return {list of int} the bytes without the last character
+ * @since 0.4
+ */
+func dropLastRune(acc as list of int) {
+    def out as list of int init $acc;
+    while (len($out) > 0 and ($out[len($out) - 1] & 0xc0) == 0x80) {
+        $out = lists.pop($out);
+    }
+    if (len($out) > 0) {
+        $out = lists.pop($out);
+    }
+    return $out;
+}
+
+/**
+ * Decode a byte accumulator as UTF-8.
+ * @param acc {list of int} the bytes, each 0..255
+ * @return {string} the decoded text
+ * @since 0.4
+ */
+func bytesToString(acc as list of int) {
+    if (len($acc) == 0) {
+        return "";
+    }
+    def buf as bytes init binary.make(len($acc));
+    for (def i in 0..len($acc)) {
+        $buf[$i] = $acc[$i];
+    }
+    return convert.stringFromBytes($buf, "utf-8");
+}
+
+/**
  * Read a password without echoing it.
+ * term.readByte yields bytes, not characters, so the line is accumulated as
+ * bytes and decoded once at the end. Built with fromCodepoint per byte instead,
+ * every non-ASCII character becomes mojibake - the two bytes of `é` turn into
+ * `Ã©` - and the identity provider rejects a password nobody mistyped.
  * @param label {string} the prompt to show
  * @return {string} the line typed, without its newline
  * @throws {Error} when stdin is not a terminal
@@ -2000,28 +2146,26 @@ def struct Hop {
 func promptHidden(label as string) {
     io.printf("%s", $label);
     def state as term.State init term.makeRaw("stdin");
-    def out as string init "";
+    # Every path, exit 130 included, or the shell is left with echo off.
+    defer term.restore($state);
+    def acc as list of int init [];
     while (true) {
         def b as int init term.readByte();
         if ($b == -1 or $b == 10 or $b == 13) {
             break;
         }
         if ($b == 3) {
-            term.restore($state);
             io.printf("\n");
             exit 130;
         }
         if ($b == 127 or $b == 8) {
-            if (len($out) > 0) {
-                $out = strings.substring($out, 0, len($out) - 1);
-            }
+            $acc = dropLastRune($acc);
         } else {
-            $out = $out + convert.fromCodepoint($b);
+            $acc[] = $b;
         }
     }
-    term.restore($state);
     io.printf("\n");
-    return $out;
+    return bytesToString($acc);
 }
 
 /**
@@ -2702,21 +2846,33 @@ func hop(
 
     # A keep-alive socket can be closed by the peer between requests (an HTTP/1.0
     # server, or one that caps requests per connection) without saying so in the
-    # previous response, and the failure only shows on the next write. Reconnect
-    # and send once more: the request never reached the server, so a POST is as
-    # safe to repeat as a GET.
+    # previous response, and the failure only shows on the next write.
+    #
+    # A GET may simply be sent again. A POST may not: http.exchange writes the
+    # request and then reads the response, and from out here a throw does not say
+    # which half failed - so a retry can resend a form the server already acted
+    # on. In this walk that means a second password attempt against a lockout
+    # counter, or a second push to somebody's phone. So the condition is avoided
+    # instead of recovered from: a POST onto an already-used session gets a fresh
+    # connection first, and is then sent exactly once.
     def blank as http.Response init http.Response{status: 0, statusText: "", headers: {}, body: ""};
     def ex as http.Exchange init http.Exchange{response: $blank, session: $live[$idx]};
-    def sent as bool init false;
-    try {
-        $ex = http.exchange($live[$idx], $method, $target, $headers, $body);
-        $sent = true;
-    } catch (e) { # lint-disable: L103
-        # Retried below; if the retry fails too, that error propagates.
-    }
-    if (not $sent) {
+    def reused as bool init len($found.sessions) == len($sessions);
+    if ($method == "POST" and $reused) {
         $live[$idx] = http.connect(originOfUrl($url), $opts);
         $ex = http.exchange($live[$idx], $method, $target, $headers, $body);
+    } else {
+        def sent as bool init false;
+        try {
+            $ex = http.exchange($live[$idx], $method, $target, $headers, $body);
+            $sent = true;
+        } catch (e) { # lint-disable: L103
+            # Retried below; if the retry fails too, that error propagates.
+        }
+        if (not $sent) {
+            $live[$idx] = http.connect(originOfUrl($url), $opts);
+            $ex = http.exchange($live[$idx], $method, $target, $headers, $body);
+        }
     }
     $live[$idx] = $ex.session;
 
@@ -3036,11 +3192,17 @@ func readPid(prof as Profile) {
     if (not fs.exists($f)) {
         return 0;
     }
-    def raw as string init strings.trim(fs.readString($f));
-    if ($raw == "") {
+    try {
+        def raw as string init strings.trim(fs.readString($f));
+        if ($raw == "") {
+            return 0;
+        }
+        return convert.toInt($raw);
+    } catch (e) {
+        # A truncated or clobbered pid file is "no tunnel", not a crash in
+        # `status`; the caller's own message is the useful one.
         return 0;
     }
-    return convert.toInt($raw);
 }
 
 /**

@@ -216,6 +216,12 @@ func testExtractTokenFromCookieHeader() {
         "ABC123");
 }
 
+func testExtractTokenRejectsAHeaderWithoutTheCookie() {
+    # Returning the whole header would post somebody else's cookies to the
+    # gateway as a token; "" reaches the caller's "no token given".
+    testing.assertEqual(extractToken("JSESSIONID=x; other=y", "acSamlv2Token"), "");
+}
+
 func testExtractTokenFromUrlQuery() {
     testing.assertEqual(
         extractToken("https://vpn.example.com/final?acSamlv2Token=ABC123&x=1", "acSamlv2Token"),
@@ -502,6 +508,49 @@ func testBrowserLaunchPrefixHandsTheBrowserBack() {
     testing.assertTrue(lists.contains($argv, "HOME=/home/jdoe"));
     testing.assertTrue(lists.contains($argv, "XDG_RUNTIME_DIR=/run/user/1000"));
     testing.assertFalse(lists.contains($argv, "HOME=/root"));
+}
+
+#
+# ---------------------------------------------------- the hidden password line
+#
+
+# term.readByte hands back bytes, so the prompt accumulates bytes and decodes
+# once. Decoding per byte turns the two bytes of a non-ASCII character into two
+# characters, and the identity provider then rejects a password nobody mistyped.
+
+func testBytesToStringDecodesUtf8() {
+    # "é" is C3 A9; one character out, not two.
+    def acc as list of int init [195, 169];
+    testing.assertEqual(bytesToString($acc), "é");
+    testing.assertEqual(len(bytesToString($acc)), 1);
+    # The regression this replaced: fromCodepoint per byte produced "Ã©".
+    testing.assertFalse(bytesToString($acc) ==
+        convert.fromCodepoint(195) + convert.fromCodepoint(169));
+    testing.assertEqual(bytesToString([]), "");
+    testing.assertEqual(bytesToString([104, 105]), "hi");
+    # A 3-byte character (€ = E2 82 AC) and a 4-byte one (😀 = F0 9F 98 80).
+    testing.assertEqual(bytesToString([226, 130, 172]), "€");
+    testing.assertEqual(bytesToString([240, 159, 152, 128]), "😀");
+}
+
+func testBytesToStringRoundTripsAPassword() {
+    def pw as string init "Sömmer-2026€";
+    def raw as bytes init convert.bytesFromString($pw, "utf-8");
+    def acc as list of int init [];
+    for (def i in 0..len($raw)) {
+        $acc[] = $raw[$i];
+    }
+    testing.assertEqual(bytesToString($acc), $pw);
+}
+
+func testDropLastRuneRemovesWholeCharacters() {
+    # Backspace after "é" must clear both its bytes, not leave half a character.
+    testing.assertEqual(bytesToString(dropLastRune([104, 195, 169])), "h");
+    testing.assertEqual(bytesToString(dropLastRune([226, 130, 172])), "");
+    testing.assertEqual(bytesToString(dropLastRune([240, 159, 152, 128])), "");
+    testing.assertEqual(bytesToString(dropLastRune([104, 105])), "h");
+    # Backspace on an empty line is not an error.
+    testing.assertEqual(len(dropLastRune([])), 0);
 }
 
 #

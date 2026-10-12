@@ -25,26 +25,23 @@ openconnect-saml disconnect
 
 ## Install
 
-With [jvc](https://jvc.jennifer-lang.dev/), which reads the `deck.toml` in this
-repository and puts the command on your `PATH`:
+With [jvc](https://jvc.jennifer-lang.dev/), from the `deck.toml` in this
+repository:
 
 ```sh
 jvc app install https://github.com/mplx/openconnect-saml
 ```
 
-That installs the newest release tag into `~/.local/share/jvc/apps/` and links
-`~/.local/bin/openconnect-saml` at it. The whole tree is unpacked together, so
-`bin/` keeps finding `../src/saml.j`; the link resolves by real path, so the
-command works from anywhere. `--version "^0.3"` pins a range, and
-`jvc app update openconnect-saml` / `jvc app uninstall openconnect-saml` move it
-on or remove it again. There is nothing to vendor - every import is a bundled
-stdlib module, so the manifest's only requirement is the interpreter itself.
+Installs the newest release tag into `~/.local/share/jvc/apps/` and links
+`~/.local/bin/openconnect-saml` at it. The tree is unpacked whole, so `bin/`
+still finds `../src/saml.j`. `--version "^0.3"` pins a range;
+`jvc app update` / `jvc app uninstall` take it from there. Nothing is vendored:
+every import is a bundled stdlib module.
 
-Install it for yourself, **not** with `--scope system`: this program wants to run
-as your desktop user and escalate for the tunnel on its own. See [Notes](#notes).
+Not `--scope system` - this runs as your desktop user and escalates for the
+tunnel itself. See [Notes](#notes).
 
-An app install carries `config.example.toml` but writes no configuration of its
-own, so copy one out of the installed tree once:
+An app install writes no configuration. Copy the template out once:
 
 ```sh
 install -Dm600 ~/.local/share/jvc/apps/openconnect-saml/config.example.toml \
@@ -168,7 +165,7 @@ an error listing the options, not a guess.
 
 Failures name the page, the fields found and the trail of URLs walked. `-v`
 shows each step; `--debug-dir DIR` saves every page (they contain CSRF tokens
-and SAML assertions).
+and SAML assertions, so the directory is created `0700` and the files `0600`).
 
 ## Notes
 
@@ -183,6 +180,16 @@ and SAML assertions).
 - **The cookie never reaches the process list** - it goes over stdin.
 - **Certificate pinning is automatic**: the gateway reports its own hash at the
   end of the login, and that becomes `--servercert`.
+- **TLS is not optional.** A plain `http://` gateway is refused unless the host
+  is loopback or `--insecure` is given. Browserless mode refuses `--insecure`
+  outright and refuses any non-`https` hop: the form's `action` decides where the
+  password goes. It prints the host that receives it.
+- **`disconnect` confirms the pid is still openconnect** (`/proc/<pid>/cmdline`)
+  before signalling it as root. Pid files outlive tunnels; Linux reuses pids.
+- **The capture browser is cleaned up on every exit path**, timeout included, so
+  no live SSO session is left behind an open debug port. That port carries no
+  `--remote-allow-origins`: `*` would let any page in any local browser drive it
+  and read the `HttpOnly` cookie.
 - Some gateways answer `<error id="96">VPN Server internal error.</error>` to a
   client that merely advertises external-browser support. That is treated as a
   no, and `probe` reports it.
@@ -223,4 +230,5 @@ Start with `openconnect-saml probe -v`.
 | `expected an auth-request ...` | wrong URL, or a portal in front of the gateway |
 | `did not complete the login` | token rejected; it expires quickly, so retry promptly |
 | `browser never opened its debug port` | another browser holds that profile or port - change `cdpPort` |
+| `browser exited without opening its debug port` | the browser's own stderr is quoted underneath; that line is the reason |
 | certificate complaints from openconnect | copy the `pin-sha256:` value it prints into `servercert` |

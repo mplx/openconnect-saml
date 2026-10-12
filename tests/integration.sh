@@ -204,6 +204,21 @@ ok 'without a factor the first control wins' 'page: Wrong factor' -- blf
 ok 'cdp refuses a browser that cannot do it' 'does not speak the DevTools protocol' -- \
     run_cli cookie --server "$BASE" --capture cdp --browser firefox
 
+# A browser that dies on startup must be reported with its own reason, not as a
+# 20-second wait ending in a guess about a stale profile. The name has to look
+# Chromium-based for the CDP path to be taken at all.
+mkdir -p "$TMP/fakebin"
+cat > "$TMP/fakebin/chromium" <<'FAKE'
+#!/bin/sh
+echo "Running as root without --no-sandbox is not supported." >&2
+exit 1
+FAKE
+chmod +x "$TMP/fakebin/chromium"
+ok 'a browser that exits is reported as such' 'exited without opening its debug port' -- \
+    run_cli cookie --server "$BASE" --capture cdp --browser "$TMP/fakebin/chromium"
+ok 'and quotes what the browser said' 'without --no-sandbox is not supported' -- \
+    run_cli cookie --server "$BASE" --capture cdp --browser "$TMP/fakebin/chromium"
+
 # --- status / disconnect with nothing running --------------------------------
 exits 'status down exits 1'      1 -- run_cli status --server "$BASE"
 ok    'disconnect finds nothing' 'nothing to disconnect' -- \

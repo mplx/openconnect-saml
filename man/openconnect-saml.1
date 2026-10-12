@@ -153,8 +153,13 @@ Print the
 command instead of running it.
 .TP
 .BR \-k ", " \-\-insecure
-Skip TLS verification while authenticating. Does not affect the tunnel, which
-is pinned separately.
+Skip TLS verification while authenticating, and allow a plain
+.B http://
+gateway. Does not affect the tunnel, which is pinned separately. Exposes the SSO
+token and the session cookie to anyone on the path; for a private-CA gateway,
+not for convenience. Refused with
+.BR "\-\-mode browserless" ,
+which submits a password rather than a token.
 .TP
 .BR \-v ", " \-\-verbose
 Narrate the exchange on standard error.
