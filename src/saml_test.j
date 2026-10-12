@@ -777,5 +777,5 @@ func testArgsMessageDropsThePrefix() {
 
 func testVersionsAgree() {
     # The one string the packaging and the man page are checked against.
-    testing.assertEqual(APP_VERSION, "0.3.0");
+    testing.assertEqual(APP_VERSION, "0.4.0");
 }

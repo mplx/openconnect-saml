@@ -16,7 +16,7 @@
  * See the README for the protocol, and openconnect-saml(1) for the interface.
  *
  * @module saml
- * @version 0.3.0
+ * @version 0.4.0
  * @see README.md
  */
 
@@ -50,7 +50,7 @@ def const APP as string init "openconnect-saml";
  * This program's own version, reported by --version.
  * @since 0.1
  */
-def const APP_VERSION as string init "0.3.0";
+def const APP_VERSION as string init "0.4.0";
 
 /**
  * The AnyConnect client version we claim to be.
@@ -545,7 +545,8 @@ func loadProfile(name as string) {
  * Also normalises the gateway URL, prepending https:// when no scheme is given.
  * @param r {args.Result} the parsed command line
  * @return {Profile} the effective profile
- * @throws {Error} kind "config" when no gateway URL is configured or passed
+ * @throws {Error} kind "config" when no gateway URL is configured or passed, or
+ *     when it is a remote http:// URL and --insecure was not given
  * @since 0.1
  */
 func resolveProfile(r as args.Result) {
@@ -826,7 +827,8 @@ func emptyAuthRequest() {
  * Parse the gateway's answer to an init request.
  * @param body {string} the response body
  * @return {AuthRequest} the login URL, token cookie name, opaque state and the rest
- * @throws {Error} kind "gateway" when the gateway refused, or offered no SAML login
+ * @throws {Error} kind "gateway" when the gateway refused, offered no SAML
+ *     login, or named the token field something that is not an XML name
  * @since 0.1
  */
 func parseAuthRequest(body as string) {
@@ -1026,10 +1028,11 @@ func tokenFromUrl(raw as string, cookieName as string) {
 /**
  * Make sense of whatever the user pasted at the token prompt.
  * Accepts the bare cookie value, a "name=value" pair, a whole Cookie header, or
- * the final URL if the token happens to ride in its query string.
+ * the final URL if the token rides in its query string.
  * @param raw {string} the pasted text
  * @param cookieName {string} the cookie name the gateway told us to expect
- * @return {string} the token, or "" when nothing was pasted
+ * @return {string} the token, or "" when nothing was pasted - or when a Cookie
+ *     header was pasted that does not carry cookieName
  * @since 0.1
  */
 func extractToken(raw as string, cookieName as string) {
@@ -1397,7 +1400,9 @@ func domainCovers(domain as string, host as string) {
  * @param id {int} the request id to use
  * @param cookieName {string} the cookie to look for
  * @param host {string} the gateway host the cookie must belong to
- * @return {string} the cookie value, or "" if it is not set yet
+ * @return {string} the cookie value, or "" if it is not set yet - also when
+ *     MAX_CDP_READS frames passed without our reply, which the caller's
+ *     deadline, not this function, decides what to do about
  * @since 0.3
  */
 func cdpCookieOnce(conn as websocket.Conn, id as int, cookieName as string, host as string) {
@@ -1526,7 +1531,8 @@ func closeCaptureBrowser(conn as websocket.Conn, child as os.Process) {
  * @param prof {Profile} the active profile
  * @param ar {AuthRequest} the gateway's answer, for the login URL and cookie name
  * @return {string} the SSO token
- * @throws {Error} kind "auth" when the browser cannot be driven, or you never finish
+ * @throws {Error} kind "auth" when the browser exits, cannot be driven, or you
+ *     never finish; kind "privilege" when it cannot be run as the right user
  * @since 0.3
  */
 func captureTokenViaCdp(prof as Profile, ar as AuthRequest) {
@@ -2033,7 +2039,7 @@ func submitToken(prof as Profile, ar as AuthRequest, token as string) {
  * and treats a refusal as a plain no. The gateway answers "external" only if we
  * advertised it, so `token` never has to deal with an encrypted token.
  * @param prof {Profile} the active profile
- * @param mode {string} "auto", "external" or "token"
+ * @param mode {string} "auto", "external", "token" or "browserless"
  * @return {Session} the authenticated session
  * @throws {Error} when the gateway refuses or the token is rejected
  * @since 0.1
@@ -2084,7 +2090,8 @@ def struct Credentials {
  * Jennifer has no tuples, so the per-origin session list rides along with the
  * response and the caller threads it forward.
  * @field sessions {list of http.Session} one live session per origin, updated
- * @field status {int} the HTTP status
+ * @field status {int} the HTTP status - but sessionFor overloads it as the
+ *     index of the session it found or opened
  * @field location {string} the Location header, or "" when there was none
  * @field body {string} the response body
  * @since 0.2
@@ -2690,8 +2697,9 @@ func radioChoices(form as html.Node, factor as string) {
  * Hidden fields (CSRF tokens, SAMLResponse, RelayState) are echoed back as
  * they came; a password field takes the password, a username-ish field the
  * username; an unchecked checkbox or radio is left out, as a browser leaves it
- * out; and the first submit control is included so the IdP sees which button
- * was pressed - Shibboleth's `_eventId_proceed` is exactly that.
+ * out; and one submit control is included so the IdP sees which button was
+ * pressed - Shibboleth's `_eventId_proceed` is exactly that. Which one is
+ * chooseSubmit's answer: the --factor match, else the first.
  * @param form {html.Node} the form element
  * @param creds {Credentials} the credentials to fill in
  * @return {string} the encoded body
@@ -3051,7 +3059,8 @@ func browserlessToken(prof as Profile, ar as AuthRequest, creds as Credentials) 
  * Authenticate with no browser at all, submitting the credentials ourselves.
  * @param prof {Profile} the active profile
  * @return {Session} the authenticated session
- * @throws {Error} kind "auth" or "gateway" when the login fails
+ * @throws {Error} kind "config" with --insecure, else "auth" or "gateway" when
+ *     the login fails
  * @since 0.2
  */
 func authenticateBrowserless(prof as Profile) {
@@ -3262,7 +3271,8 @@ func cmdStatus(r as args.Result) {
 /**
  * The `disconnect` command: stop a tunnel started by `connect`.
  * @param r {args.Result} the parsed command line
- * @return {int} 0 when a tunnel was stopped, 1 when there was none
+ * @return {int} 0 when a tunnel was stopped, 1 when there was none - or when
+ *     the recorded pid is alive but is no longer openconnect
  * @throws {Error} kind "privilege" or "openconnect" when the process cannot be signalled
  * @since 0.1
  */

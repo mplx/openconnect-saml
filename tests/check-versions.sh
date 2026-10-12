@@ -12,7 +12,7 @@
 # git tag has to match what the tree says).
 #
 #     tests/check-versions.sh          # internally consistent?
-#     tests/check-versions.sh 0.3.0    # ... and equal to 0.3.0?
+#     tests/check-versions.sh 0.4.0    # ... and equal to 0.4.0?
 set -eu
 
 cd "$(dirname "$0")/.."

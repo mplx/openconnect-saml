@@ -13,7 +13,7 @@
 # Maintainer: mplx <developer@mplx.eu>
 
 pkgname=openconnect-saml
-pkgver=0.3.0
+pkgver=0.4.0
 pkgrel=1
 pkgdesc='Connect to a Cisco AnyConnect VPN that authenticates with SAML/SSO, using your own browser'
 arch=('any')

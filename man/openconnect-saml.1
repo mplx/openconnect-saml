@@ -1,6 +1,6 @@
 .\" SPDX-License-Identifier: LGPL-3.0-only
 .\" SPDX-FileCopyrightText: Copyright (C) 2026 mplx <developer@mplx.eu>
-.TH OPENCONNECT-SAML 1 "2026-09-08" "openconnect-saml 0.3.0" "User Commands"
+.TH OPENCONNECT-SAML 1 "2026-10-12" "openconnect-saml 0.4.0" "User Commands"
 .
 .SH NAME
 openconnect-saml \- connect to a Cisco AnyConnect VPN that authenticates with SAML/SSO
@@ -145,7 +145,9 @@ Save each page of a
 .B browserless
 login into
 .IR DIR .
-These pages contain CSRF tokens and SAML assertions.
+These pages contain CSRF tokens and SAML assertions, so
+.I DIR
+is created mode 0700 and the pages 0600.
 .TP
 .BR \-p ", " \-\-print
 Print the
@@ -198,6 +200,13 @@ factor or a JavaScript-driven page ends it, with a message saying so. It never
 resubmits a refused credential. Where a second factor is offered as a form,
 .B \-\-factor
 chooses between the options.
+.IP
+Unlike every other mode this one submits a password rather than a token, to
+whatever form the walk reaches. So it refuses any hop that is not
+.BR https ,
+refuses to run with
+.BR \-\-insecure ,
+and prints the host that receives the password.
 .TP
 .B auto
 Offers the external-browser method, and uses it when the gateway and the local

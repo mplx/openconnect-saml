@@ -1,6 +1,6 @@
 [package]
 name = "openconnect-saml"
-version = "0.3.0"
+version = "0.4.0"
 description = "Connect to a Cisco AnyConnect gateway that authenticates with SAML/SSO, using your ordinary desktop browser and plain openconnect."
 license = "LGPL-3.0-only"
 authors = ["mplx <developer@mplx.eu>"]

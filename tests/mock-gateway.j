@@ -20,7 +20,7 @@
  *   factors   offers a choice of second factors as an HTML form
  *
  * @module mock-gateway
- * @version 0.3.0
+ * @version 0.4.0
  */
 
 use io;

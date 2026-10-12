@@ -34,7 +34,7 @@ jvc app install https://github.com/mplx/openconnect-saml
 
 Installs the newest release tag into `~/.local/share/jvc/apps/` and links
 `~/.local/bin/openconnect-saml` at it. The tree is unpacked whole, so `bin/`
-still finds `../src/saml.j`. `--version "^0.3"` pins a range;
+still finds `../src/saml.j`. `--version "^0.4"` pins a range;
 `jvc app update` / `jvc app uninstall` take it from there. Nothing is vendored:
 every import is a bundled stdlib module.
 
@@ -137,8 +137,8 @@ device" survive to the next connect.
 
 Otherwise (Firefox, or `capture = "paste"`) you are given the login URL and
 asked for the cookie - **F12 -> Application/Storage -> Cookies**. The prompt
-takes the bare value, a `name=value` pair, a whole `Cookie:` header, or the
-final URL.
+takes the bare value, a `name=value` pair, a whole `Cookie:` header carrying
+that cookie, or the final URL.
 
 ## Browserless mode
 
@@ -209,7 +209,7 @@ and SAML assertions, so the directory is created `0700` and the files `0600`).
 
 ```sh
 tests/run.sh              # parse, format, lint, docs, versions, unit, integration
-tests/run.sh 0.3.0        # ... and require that version, as a tag build does
+tests/run.sh 0.4.0        # ... and require that version, as a tag build does
 ```
 
 The logic sits in `src/saml.j` rather than the executable so `saml_test.j` can

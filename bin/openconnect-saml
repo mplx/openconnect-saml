@@ -17,7 +17,7 @@
  * See openconnect-saml(1) for the interface and the README for the protocol.
  *
  * @module openconnect-saml
- * @version 0.3.0
+ * @version 0.4.0
  * @see src/saml.j
  * @example
  *   openconnect-saml probe   --server https://vpn.example.com/saml

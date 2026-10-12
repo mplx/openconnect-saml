@@ -7,7 +7,7 @@
 # This is what CI runs and what the PKGBUILD's check() calls.
 #
 #     tests/run.sh            # everything
-#     tests/run.sh 0.3.0      # ... and require that version (tag builds)
+#     tests/run.sh 0.4.0      # ... and require that version (tag builds)
 set -eu
 
 cd "$(dirname "$0")/.."
