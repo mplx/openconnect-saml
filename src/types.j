@@ -7,7 +7,7 @@
  * The data every other module passes around, and the constants they share.
  *
  * @module types
- * @version 0.4.0
+ * @version 0.5.0
  */
 
 import "http.j" as http;
@@ -21,7 +21,7 @@ export def const APP as string init "ocsaml";
  * This program's own version, reported by --version.
  * @since 0.1
  */
-export def const APP_VERSION as string init "0.4.0";
+export def const APP_VERSION as string init "0.5.0";
 
 /**
  * The AnyConnect client version we claim to be.

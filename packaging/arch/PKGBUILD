@@ -13,7 +13,7 @@
 # Maintainer: mplx <developer@mplx.eu>
 
 pkgname=ocsaml
-pkgver=0.4.0
+pkgver=0.5.0
 pkgrel=1
 pkgdesc='OpenConnect wrapper for Cisco AnyConnect SAML/SSO, using your own browser'
 arch=('any')

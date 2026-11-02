@@ -11,7 +11,7 @@
  * the entry point; everything real lives in commands.j and what that imports.
  *
  * @module saml
- * @version 0.4.0
+ * @version 0.5.0
  * @see README.md
  */
 
