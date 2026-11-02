@@ -266,19 +266,20 @@ func browserOwner(prof as types.Profile) {
  * identity provider's session - and any "remember this device" the second
  * factor grants - survives to the next connect. When the browser is handed back
  * to an unprivileged user the profile follows it into that user's home, so root
- * never ends up owning the session it is about to read a cookie out of.
+ * never ends up owning the session it is about to read a cookie out of. A
+ * configured `~` means that same home, for the same reason.
  * @param prof {Profile} the active profile
  * @param owner {BrowserOwner} who the browser will run as
  * @return {string} the profile directory
  * @since 0.3
  */
 func browserProfileDir(prof as types.Profile, owner as types.BrowserOwner) {
-    if ($prof.browserProfile != "") {
-        return $prof.browserProfile;
-    }
     def home as string init os.homeDir();
     if ($owner.home != "") {
         $home = $owner.home;
+    }
+    if ($prof.browserProfile != "") {
+        return util.expandHome($prof.browserProfile, $home);
     }
     return path.join($home, ".cache", types.APP, "browser");
 }

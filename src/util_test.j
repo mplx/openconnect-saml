@@ -6,6 +6,7 @@
 #     jennifer test src/util_test.j
 use testing;
 use convert;
+use strings;
 
 #
 # ------------------------------------------------------------------ XML output
@@ -27,6 +28,33 @@ func testRenderTrailNumbersTheSteps() {
     def out as string init renderTrail(["GET /a", "POST /b"]);
     testing.assertContains($out, "1) GET /a");
     testing.assertContains($out, "2) POST /b");
+}
+
+func testExpandHome() {
+    testing.assertEqual(expandHome("~/.cache/x", "/home/u"), "/home/u/.cache/x");
+    testing.assertEqual(expandHome("~", "/home/u"), "/home/u");
+    # Only a leading `~` is a home; anything else is a literal path.
+    testing.assertEqual(expandHome("/srv/~/x", "/home/u"), "/srv/~/x");
+    testing.assertEqual(expandHome("~u/x", "/home/u"), "~u/x");
+}
+
+func testIsCertPinAcceptsWhatOpenconnectTakes() {
+    testing.assertTrue(isCertPin("pin-sha256:AAAA"));
+    testing.assertTrue(isCertPin("pin-sha256:abc+/DEF012="));
+    # Hex digests: SHA-1 and SHA-256, bare or prefixed, colons allowed.
+    testing.assertTrue(isCertPin("0123456789abcdef0123456789abcdef01234567"));
+    testing.assertTrue(isCertPin("sha256:" + strings.repeat("ab", 32)));
+    testing.assertTrue(isCertPin("sha1:" + strings.repeat("AB:", 19) + "AB"));
+}
+
+func testIsCertPinRefusesTheRest() {
+    testing.assertFalse(isCertPin(""));
+    testing.assertFalse(isCertPin("pin-sha256:"));
+    testing.assertFalse(isCertPin("pin-sha256:has space"));
+    testing.assertFalse(isCertPin("pin-sha256:semi;colon"));
+    # Too short for a digest.
+    testing.assertFalse(isCertPin("deadbeef"));
+    testing.assertFalse(isCertPin("not-a-hash"));
 }
 
 #

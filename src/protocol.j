@@ -177,6 +177,50 @@ func ssoFieldName(auth as xml.Value) {
 }
 
 /**
+ * The source text of the first `<name ...>...</name>` element in a document.
+ * xml.encode of the parsed tree may reorder attributes, change their quoting or
+ * turn `<x></x>` into `<x/>`; slicing the source is what makes "echoed byte for
+ * byte" true of the opaque block.
+ * @param body {string} the document source
+ * @param name {string} the element name
+ * @return {string} the element's source, start tag to end tag, or "" when the
+ *     element is absent or its end cannot be found
+ * @since 0.4
+ */
+func rawElement(body as string, name as string) {
+    def open as string init "<" + $name;
+    def close as string init "</" + $name + ">";
+    def from as int init 0;
+    while ($from < len($body)) {
+        def i as int init strings.indexOf($body, $open, $from);
+        if ($i < 0) {
+            return "";
+        }
+        def after as int init $i + len($open);
+        if ($after >= len($body)) {
+            return "";
+        }
+        # `<opaque` must not match `<opaque-ish`: the name ends at whitespace,
+        # `>` or `/`.
+        def c as string init strings.substring($body, $after, $after + 1);
+        if ($c == ">" or $c == "/" or strings.trim($c) == "") {
+            def j as int init strings.indexOf($body, $close, $after);
+            if ($j >= 0) {
+                return strings.substring($body, $i, $j + len($close));
+            }
+            # No end tag: a self-closing `<name .../>` ends at its own `>`.
+            def gt as int init strings.indexOf($body, ">", $after);
+            if ($gt > 0 and strings.substring($body, $gt - 1, $gt) == "/") {
+                return strings.substring($body, $i, $gt + 1);
+            }
+            return "";
+        }
+        $from = $after;
+    }
+    return "";
+}
+
+/**
  * A zeroed AuthRequest, for a variable that is filled in later.
  * @return {AuthRequest} every field empty or false
  * @since 0.1
@@ -257,7 +301,13 @@ func parseAuthRequest(body as string) {
     }
     if (xml.has($root, "opaque")) {
         def opaque as xml.Value init xml.get($root, "opaque");
-        $ar.opaqueXml = util.stripXmlDecl(xml.encode($opaque));
+        # Sliced from the source, not re-encoded: the gateway compares what it
+        # wrote. The re-encoding is only the fallback for a source the slicer
+        # cannot delimit.
+        $ar.opaqueXml = rawElement($body, "opaque");
+        if ($ar.opaqueXml == "") {
+            $ar.opaqueXml = util.stripXmlDecl(xml.encode($opaque));
+        }
         $ar.tunnelGroup = childText($opaque, "tunnel-group", "");
     }
     return $ar;
@@ -296,9 +346,18 @@ func parseAuthComplete(prof as types.Profile, body as string) {
     }
     # The gateway hands us its own certificate hash; pin openconnect to it.
     if ($sess.fingerprint == "" and xml.has($root, "config/vpn-base-config/server-cert-hash")) {
-        $sess.fingerprint = strings.trim(xml.text(xml.get(
+        def hash as string init strings.trim(xml.text(xml.get(
             $root,
             "config/vpn-base-config/server-cert-hash")));
+        # It becomes an openconnect argument, so a value of the wrong shape is
+        # refused here, where the cause is, not three steps later in openconnect.
+        if ($hash != "" and not util.isCertPin($hash)) {
+            util.fail(
+                "gateway",
+                "the gateway reported a certificate hash that does not look like one: '" +
+                    $hash + "'");
+        }
+        $sess.fingerprint = $hash;
     }
     if (xml.has($root, "auth")) {
         def auth as xml.Value init xml.get($root, "auth");
@@ -322,11 +381,27 @@ export func probeOfferingExternal(prof as types.Profile) {
     try {
         return probeGateway($prof, true);
     } catch (e) {
+        if (not fallsBackToPlain($e.kind)) {
+            throw $e;
+        }
         util.note($prof, "gateway refused the external-browser offer (" + $e.message + ")");
         def plain as types.AuthRequest init probeGateway($prof, false);
         $plain.externalRefused = true;
         return $plain;
     }
+}
+
+/**
+ * Whether a failed external-browser offer is worth repeating as a plain probe.
+ * Only the gateway's own refusal is. A TLS, DNS or timeout failure would stop
+ * the plain probe the same way, after a second full timeout, and the note
+ * would call it a refusal it was not.
+ * @param kind {string} the error kind of the failed probe
+ * @return {bool} true for kind "gateway"
+ * @since 0.4
+ */
+func fallsBackToPlain(kind as string) {
+    return $kind == "gateway";
 }
 
 /**

@@ -155,6 +155,21 @@ func loadProfile(name as string) {
         return $prof;
     }
 
+    return readProfile($doc, $want, $cfg);
+}
+
+/**
+ * Fill a Profile from one table of a parsed config file.
+ * @param doc {toml.Value} the parsed config
+ * @param want {string} the profile name, a top-level table
+ * @param cfg {string} the config file's path, for messages
+ * @return {Profile} the defaults overlaid with the table's keys
+ * @throws {Error} kind "config" when the table does not exist, `cdpPort` is not
+ *     a TCP port, or `captureTimeout` is under a second
+ * @since 0.4
+ */
+func readProfile(doc as toml.Value, want as string, cfg as string) {
+    def prof as types.Profile init types.defaultProfile();
     def base as string init "/" + $want;
     if (not toml.has($doc, $base)) {
         util.fail(
@@ -172,14 +187,68 @@ func loadProfile(name as string) {
     $prof.user = tomlString($doc, $base + "/user", "");
     $prof.capture = tomlString($doc, $base + "/capture", "auto");
     $prof.cdpPort = tomlInt($doc, $base + "/cdpPort", 9333);
+    # Out of range it would reach --remote-debugging-port and fail in the
+    # browser's words, not ours.
+    if ($prof.cdpPort < 1 or $prof.cdpPort > 65535) {
+        util.fail(
+            "config",
+            "cdpPort = " + convert.toString($prof.cdpPort) + " in " + $cfg +
+                " is not a TCP port (1..65535)");
+    }
     $prof.browserProfile = tomlString($doc, $base + "/browserProfile", "");
-    $prof.captureTimeoutMs = tomlInt($doc, $base + "/captureTimeout", 300) * 1000;
+    def captureTimeout as int init tomlInt($doc, $base + "/captureTimeout", 300);
+    # Zero or less puts the capture deadline in the past before the browser
+    # has opened.
+    if ($captureTimeout < 1) {
+        util.fail(
+            "config",
+            "captureTimeout = " + convert.toString($captureTimeout) + " in " + $cfg +
+                " must be at least 1 (seconds)");
+    }
+    $prof.captureTimeoutMs = $captureTimeout * 1000;
     $prof.passwordCommand = tomlString($doc, $base + "/passwordCommand", "");
     $prof.factor = tomlString($doc, $base + "/factor", "");
     $prof.servercert = tomlString($doc, $base + "/servercert", "");
     $prof.insecure = tomlBool($doc, $base + "/insecure", false);
     $prof.extra = tomlList($doc, $base + "/extra");
     return $prof;
+}
+
+/**
+ * A gateway URL with a scheme, in lower case.
+ * No scheme means https. The scheme is case-insensitive by RFC 3986, but what
+ * follows compares it as text and the wire gets whatever is stored, so it is
+ * folded once here.
+ * @param server {string} the URL as configured or passed
+ * @return {string} the URL with a lower-case `http://` or `https://` prefix
+ * @since 0.4
+ */
+func normaliseServer(server as string) {
+    def lowered as string init strings.lower($server);
+    def out as string init $server;
+    if (not strings.startsWith($lowered, "http://") and
+        not strings.startsWith($lowered, "https://")) {
+        $out = "https://" + $server;
+    }
+    def scheme as string init strings.lower(uri.parse($out).scheme);
+    return $scheme + strings.substring($out, len($scheme));
+}
+
+/**
+ * Whether a gateway URL is a plain-http one that must be refused.
+ * Both directions carry a bearer credential - the SSO token in, the session
+ * cookie out - so clear text is refused unless the host is this machine (the
+ * credential never leaves the kernel) or --insecure already said
+ * "unauthenticated channel accepted".
+ * @param server {string} the normalised gateway URL
+ * @param insecure {bool} the profile's --insecure
+ * @return {bool} true when the URL is remote http:// and --insecure is off
+ * @since 0.4
+ */
+func refusesPlainHttp(server as string, insecure as bool) {
+    def u as uri.Uri init uri.parse($server);
+    return strings.lower($u.scheme) == "http" and not $insecure and
+        not util.isLoopbackHost($u.host);
 }
 
 /**
@@ -236,15 +305,8 @@ export func resolveProfile(r as args.Result) {
             "no gateway URL - pass --server https://vpn.example.com," + " or put one in " +
                 configPath());
     }
-    if (not strings.startsWith($prof.server, "http://") and
-        not strings.startsWith($prof.server, "https://")) {
-        $prof.server = "https://" + $prof.server;
-    }
-    # Both directions carry a bearer credential: the SSO token in, the session
-    # cookie out. --insecure already means "unauthenticated channel accepted",
-    # so it is the only way through.
-    if (strings.startsWith($prof.server, "http://") and not $prof.insecure and
-        not util.isLoopbackHost(uri.parse($prof.server).host)) {
+    $prof.server = normaliseServer($prof.server);
+    if (refusesPlainHttp($prof.server, $prof.insecure)) {
         util.fail(
             "config",
             "refusing to authenticate over plain http://: the SSO token and the VPN\n" +

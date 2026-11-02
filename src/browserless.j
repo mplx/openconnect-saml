@@ -270,6 +270,45 @@ func guardHttps(url as string, trail as list of string) {
 }
 
 /**
+ * Every check a hop must pass before anything is sent on it.
+ * @param url {string} the URL about to be fetched
+ * @param trail {list of string} the walk so far
+ * @param where {string} the step about to be taken, "METHOD URL"
+ * @throws {Error} kind "auth" from whichever guard objects
+ * @since 0.4
+ */
+func guardStep(url as string, trail as list of string, where as string) {
+    guardHttps($url, $trail);
+    guardSecondFactor($url, $trail);
+    guardNoLoop($trail, $where);
+}
+
+/**
+ * Stop when the credential form comes back after the credentials were sent.
+ * Being shown it again means the last submission was refused; resubmitting the
+ * same wrong password until the step budget runs out is how an account gets
+ * locked.
+ * @param wantsPassword {bool} the form in front of us asks for a password
+ * @param sentPassword {bool} a password has already been submitted
+ * @param user {string} the username, for the message
+ * @param trail {list of string} the walk so far, for the message
+ * @throws {Error} kind "auth" when both flags are set
+ * @since 0.4
+ */
+func guardNotRefused(
+    wantsPassword as bool,
+    sentPassword as bool,
+    user as string,
+    trail as list of string) {
+    if ($wantsPassword and $sentPassword) {
+        util.fail(
+            "auth",
+            "the identity provider rejected the credentials for " + $user +
+                " (it asked for the password a second time)" + util.renderTrail($trail));
+    }
+}
+
+/**
  * Stop if the walk has come back to the same place twice.
  * Three visits to one URL is a cycle, not progress - end it while the trail is
  * still short enough to read.
@@ -646,8 +685,12 @@ func sameNode(a as html.Node, b as html.Node) {
  */
 func sessionFor(sessions as list of http.Session, url as string, opts as http.Options) {
     def u as uri.Uri init uri.parse($url);
+    # Scheme and host are case-insensitive; a `Location: HTTPS://...` must land
+    # on the session, and the jar, that `https://...` opened.
+    def scheme as string init strings.lower($u.scheme);
+    def host as string init strings.lower($u.host);
     def port as int init 443;
-    if ($u.scheme == "http") {
+    if ($scheme == "http") {
         $port = 80;
     }
     if ($u.port != "") {
@@ -655,7 +698,7 @@ func sessionFor(sessions as list of http.Session, url as string, opts as http.Op
     }
     def out as list of http.Session init $sessions;
     for (def i in 0..len($out)) {
-        if ($out[$i].scheme == $u.scheme and $out[$i].host == $u.host and $out[$i].port == $port) {
+        if ($out[$i].scheme == $scheme and $out[$i].host == $host and $out[$i].port == $port) {
             return types.Hop{sessions: $out, status: $i, location: "", body: ""};
         }
     }
@@ -665,17 +708,58 @@ func sessionFor(sessions as list of http.Session, url as string, opts as http.Op
 
 /**
  * The origin of a URL, in the form http.connect wants.
+ * Scheme and host are folded to lower case so that sessionFor's comparison and
+ * the session http.connect records agree.
  * @param url {string} any absolute URL
  * @return {string} scheme://host[:port]/
  * @since 0.2
  */
 func originOfUrl(url as string) {
     def u as uri.Uri init uri.parse($url);
-    def origin as string init $u.scheme + "://" + $u.host;
+    def origin as string init strings.lower($u.scheme) + "://" + strings.lower($u.host);
     if ($u.port != "") {
         $origin = $origin + ":" + $u.port;
     }
     return $origin + "/";
+}
+
+/**
+ * A fresh connection to a session's origin, carrying its cookie jar over.
+ * http.connect starts with an empty jar. Without the copy, the session and
+ * CSRF cookies the identity provider set on the GET that served a form would
+ * be missing from the POST that submits it, and the provider would answer with
+ * the form again. The old socket is closed; nothing else holds it.
+ * @param old {http.Session} the session being replaced
+ * @param url {string} a URL on the origin
+ * @param opts {http.Options} options for the new connection
+ * @return {http.Session} the new session, with the old jar
+ * @since 0.4
+ */
+func reconnect(old as http.Session, url as string, opts as http.Options) {
+    def fresh as http.Session init http.connect(originOfUrl($url), $opts);
+    $fresh.jar = $old.jar;
+    closeSessions([$old]);
+    return $fresh;
+}
+
+/**
+ * Append a form body to a URL as its query string.
+ * A form with method="get" carries its fields in the URL; a body on a GET is
+ * ignored by the server.
+ * @param url {string} the absolute URL
+ * @param query {string} the urlencoded fields, "" for none
+ * @return {string} the URL with the fields after `?`, or after `&` when it
+ *     already has a query
+ * @since 0.4
+ */
+func withQuery(url as string, query as string) {
+    if ($query == "") {
+        return $url;
+    }
+    if (strings.contains($url, "?")) {
+        return $url + "&" + $query;
+    }
+    return $url + "?" + $query;
 }
 
 /**
@@ -730,7 +814,7 @@ func hop(
     def ex as http.Exchange init http.Exchange{response: $blank, session: $live[$idx]};
     def reused as bool init len($found.sessions) == len($sessions);
     if ($method == "POST" and $reused) {
-        $live[$idx] = http.connect(originOfUrl($url), $opts);
+        $live[$idx] = reconnect($live[$idx], $url, $opts);
         $ex = http.exchange($live[$idx], $method, $target, $headers, $body);
     } else {
         def sent as bool init false;
@@ -741,7 +825,7 @@ func hop(
             # Retried below; if the retry fails too, that error propagates.
         }
         if (not $sent) {
-            $live[$idx] = http.connect(originOfUrl($url), $opts);
+            $live[$idx] = reconnect($live[$idx], $url, $opts);
             $ex = http.exchange($live[$idx], $method, $target, $headers, $body);
         }
     }
@@ -819,7 +903,8 @@ func browserlessToken(prof as types.Profile, ar as types.AuthRequest, creds as t
     $opts.timeoutMs = types.HTTP_TIMEOUT_MS;
     $opts.tls = http.TlsOptions{skipVerify: $prof.insecure, caCert: $noCa};
 
-    def gatewayHost as string init uri.parse($prof.server).host;
+    # Lower case to match what sessionFor records.
+    def gatewayHost as string init strings.lower(uri.parse($prof.server).host);
     def sessions as list of http.Session init [];
     def url as string init $ar.loginUrl;
     def method as string init "GET";
@@ -833,9 +918,7 @@ func browserlessToken(prof as types.Profile, ar as types.AuthRequest, creds as t
         def where as string init $method + " " + $url;
         util.note($prof, io.sprintf("sso step %d: %s", $step + 1, $where));
         # Before anything is sent: this is the hop that would carry it.
-        guardHttps($url, $trail);
-        guardSecondFactor($url, $trail);
-        guardNoLoop($trail, $where);
+        guardStep($url, $trail, $where);
         $trail[] = $where;
 
         def h as types.Hop init hop($sessions, $url, $method, $body, $opts);
@@ -878,16 +961,8 @@ func browserlessToken(prof as types.Profile, ar as types.AuthRequest, creds as t
         }
         def form as html.Node init $forms[0];
         util.note($prof, "  form: " + describeForm($form));
-        # Being shown the credential form again means the last submission was
-        # refused. Stop: resubmitting the same wrong password until the step
-        # budget runs out is how an account gets locked.
         def wantsPassword as bool init formHasPassword($form);
-        if ($wantsPassword and $sentPassword) {
-            util.fail(
-                "auth",
-                "the identity provider rejected the credentials for " + $creds.user +
-                    " (it asked for the password a second time)" + util.renderTrail($trail));
-        }
+        guardNotRefused($wantsPassword, $sentPassword, $creds.user, $trail);
         $sentPassword = $sentPassword or $wantsPassword;
         def action as string init attrOrEmpty($form, "action");
         if ($action == "") {
@@ -910,6 +985,8 @@ func browserlessToken(prof as types.Profile, ar as types.AuthRequest, creds as t
         $method = "POST";
         if (strings.lower(attrOrEmpty($form, "method")) == "get") {
             $method = "GET";
+            $url = withQuery($url, $body);
+            $body = "";
         }
     }
     util.fail(

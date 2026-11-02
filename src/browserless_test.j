@@ -205,6 +205,22 @@ func testGuardNoLoopAllowsASecondVisit() {
     guardNoLoop(["GET /a"], "GET /a");
 }
 
+func testWithQueryPutsAGetFormsFieldsInTheUrl() {
+    # A body on a GET is ignored by the server; the fields ride in the query.
+    testing.assertEqual(withQuery("https://idp/x", "a=1&b=2"), "https://idp/x?a=1&b=2");
+    testing.assertEqual(withQuery("https://idp/x?k=v", "a=1"), "https://idp/x?k=v&a=1");
+    testing.assertEqual(withQuery("https://idp/x", ""), "https://idp/x");
+}
+
+func testOriginOfUrlFoldsCaseAndKeepsThePort() {
+    # A `Location: HTTPS://IdP...` must reuse the session `https://idp...`
+    # opened, or the cookies set on one never reach the other.
+    testing.assertEqual(
+        originOfUrl("HTTPS://IdP.Example.com:8443/a?b"),
+        "https://idp.example.com:8443/");
+    testing.assertEqual(originOfUrl("https://idp.example.com/a"), "https://idp.example.com/");
+}
+
 func throwsOnPlainHttpHop() {
     guardHttps("http://idp.example.com/login", []);
 }

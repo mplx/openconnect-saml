@@ -27,35 +27,41 @@ import "./util.j" as util;
 #
 
 /**
- * Whether openconnect is installed and runnable.
- * Costs a process spawn, so callers that need the answer twice should keep it
- * in a local: a module holds no mutable state, so this cannot memoise itself.
- * @return {bool} true when `openconnect --version` succeeds
- * @since 0.1
+ * openconnect's help text, which doubles as the presence check.
+ * One spawn answers both "is it installed" and "does it have
+ * --external-browser"; a caller needing both takes this once and keeps it in a
+ * local, since a module holds no mutable state to memoise in.
+ * @return {string} the output of `openconnect --help`, "" when it cannot be run
+ * @since 0.4
  */
-export func haveOpenconnect() {
+export func openconnectHelp() {
     try {
-        def r as os.Result init os.run(["openconnect", "--version"]);
-        return $r.exitCode == 0;
+        def r as os.Result init os.run(["openconnect", "--help"]);
+        return $r.stdout + $r.stderr;
     } catch (e) {
-        return false;
+        return "";
     }
 }
 
 /**
+ * Whether a help text says openconnect can drive Cisco's external-browser SSO.
+ * @param help {string} the output of openconnectHelp
+ * @return {bool} true when it mentions --external-browser
+ * @since 0.4
+ */
+export func helpHasExternalBrowser(help as string) {
+    return strings.contains($help, "--external-browser");
+}
+
+/**
  * Whether the local openconnect can drive Cisco's external-browser SSO.
- * Spawns openconnect, like haveOpenconnect; the same advice about a local
- * applies.
+ * Spawns openconnect; a caller that also needs to know whether it is installed
+ * should take openconnectHelp once instead.
  * @return {bool} true when its help text mentions --external-browser
  * @since 0.1
  */
 export func supportsExternalBrowser() {
-    try {
-        def r as os.Result init os.run(["openconnect", "--help"]);
-        return strings.contains($r.stdout + $r.stderr, "--external-browser");
-    } catch (e) {
-        return false;
-    }
+    return helpHasExternalBrowser(openconnectHelp());
 }
 
 /**

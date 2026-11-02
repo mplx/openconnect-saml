@@ -45,6 +45,71 @@ func testProfileNamesSkipsScalars() {
     testing.assertEqual($names, ["work", "lab"]);
 }
 
+func testNormaliseServerAddsHttpsAndLowersTheScheme() {
+    testing.assertEqual(normaliseServer("vpn.example.com"), "https://vpn.example.com");
+    testing.assertEqual(normaliseServer("vpn.example.com/saml"), "https://vpn.example.com/saml");
+    # Case-insensitive by RFC 3986; folded so the text comparisons downstream
+    # see one spelling, and nothing gets a second scheme prepended.
+    testing.assertEqual(
+        normaliseServer("HTTPS://Vpn.Example.com/saml"),
+        "https://Vpn.Example.com/saml");
+    testing.assertEqual(normaliseServer("HTTP://vpn.example.com"), "http://vpn.example.com");
+    testing.assertEqual(
+        normaliseServer("https://vpn.example.com/saml"),
+        "https://vpn.example.com/saml");
+}
+
+func testRefusesPlainHttpUnlessLoopbackOrInsecure() {
+    testing.assertTrue(refusesPlainHttp("http://vpn.example.com/saml", false));
+    testing.assertFalse(refusesPlainHttp("http://vpn.example.com/saml", true));
+    testing.assertFalse(refusesPlainHttp("http://127.0.0.1:8080/saml", false));
+    testing.assertFalse(refusesPlainHttp("http://localhost/saml", false));
+    testing.assertFalse(refusesPlainHttp("https://vpn.example.com/saml", false));
+    # Userinfo must not stand in for the host.
+    testing.assertTrue(refusesPlainHttp("http://127.0.0.1@vpn.example.com/saml", false));
+}
+
+func testReadProfileConvertsCaptureTimeoutToMilliseconds() {
+    def doc as toml.Value init toml.decode(CONFIG +
+        '
+[slow]
+server = "https://x"
+captureTimeout = 42
+');
+    testing.assertEqual(readProfile($doc, "slow", "cfg").captureTimeoutMs, 42000);
+    testing.assertEqual(readProfile($doc, "work", "cfg").captureTimeoutMs, 300000);
+}
+
+func throwsOnBadCdpPort() {
+    readProfile(toml.decode('[p]
+server = "https://x"
+cdpPort = 70000
+'), "p", "cfg");
+}
+
+func testReadProfileRejectsAPortOutOfRange() {
+    testing.assertThrows("throwsOnBadCdpPort", "config");
+}
+
+func throwsOnZeroCaptureTimeout() {
+    readProfile(toml.decode('[p]
+server = "https://x"
+captureTimeout = 0
+'), "p", "cfg");
+}
+
+func testReadProfileRejectsAZeroCaptureTimeout() {
+    testing.assertThrows("throwsOnZeroCaptureTimeout", "config");
+}
+
+func throwsOnUnknownProfile() {
+    readProfile(toml.decode(CONFIG), "nope", "cfg");
+}
+
+func testReadProfileNamesTheProfilesItFound() {
+    testing.assertThrows("throwsOnUnknownProfile", "config");
+}
+
 func testTomlReaders() {
     def doc as toml.Value init toml.decode(CONFIG);
     testing.assertEqual(tomlString($doc, "/work/server", "x"), "https://vpn.example.com/saml");

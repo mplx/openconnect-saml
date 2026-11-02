@@ -337,3 +337,83 @@ export func renderTrail(trail as list of string) {
 export func quoted(s as string) {
     return "\"" + $s + "\"";
 }
+
+/**
+ * Expand a leading `~` to a home directory.
+ * A config value such as `~/.cache/ocsaml/browser` is expanded by nobody else:
+ * left alone it names a directory literally called `~` under the cwd.
+ * @param p {string} the path as written
+ * @param home {string} the home directory to substitute
+ * @return {string} the path with `~` or `~/` replaced, else unchanged
+ * @since 0.4
+ */
+export func expandHome(p as string, home as string) {
+    if ($p == "~") {
+        return $home;
+    }
+    if (strings.startsWith($p, "~/")) {
+        return $home + strings.substring($p, 1);
+    }
+    return $p;
+}
+
+/**
+ * Whether a string has the shape of a certificate pin openconnect takes for
+ * --servercert. The gateway reports its own hash in the `complete` document and
+ * the value becomes an openconnect argument, so an unexpected shape fails here,
+ * where the cause is, instead of inside openconnect.
+ * @param s {string} the candidate
+ * @return {bool} true for `pin-sha256:` plus base64, or `sha1:` / `sha256:` /
+ *     bare hex of at least 40 digits, colons allowed
+ * @since 0.4
+ */
+export func isCertPin(s as string) {
+    if (strings.startsWith($s, "pin-sha256:")) {
+        return isBase64(strings.substring($s, 11));
+    }
+    def hex as string init $s;
+    if (strings.startsWith($hex, "sha256:")) {
+        $hex = strings.substring($hex, 7);
+    } elseif (strings.startsWith($hex, "sha1:")) {
+        $hex = strings.substring($hex, 5);
+    }
+    return isHexDigest($hex);
+}
+
+/**
+ * Whether a string is non-empty base64 text.
+ * @param s {string} the candidate
+ * @return {bool} true when every character is a base64 digit or padding
+ * @since 0.4
+ */
+func isBase64(s as string) {
+    if ($s == "") {
+        return false;
+    }
+    def ok as string init "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789+/=";
+    for (def c in strings.chars($s)) {
+        if (not strings.contains($ok, $c)) {
+            return false;
+        }
+    }
+    return true;
+}
+
+/**
+ * Whether a string is a hex digest of at least 40 digits, colons allowed.
+ * 40 is SHA-1; SHA-256 is 64.
+ * @param s {string} the candidate
+ * @return {bool} true for hex digits and colons only, with 40 or more digits
+ * @since 0.4
+ */
+func isHexDigest(s as string) {
+    def digits as int init 0;
+    for (def c in strings.chars($s)) {
+        if (strings.contains("0123456789abcdefABCDEF", $c)) {
+            $digits = $digits + 1;
+        } elseif ($c != ":") {
+            return false;
+        }
+    }
+    return $digits >= 40;
+}

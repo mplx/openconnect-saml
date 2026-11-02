@@ -219,7 +219,12 @@ while (true) { # lint-disable: L105
             httpd.respond($req, 200, loginPage("Enter your credentials"));
         }
     } elseif ($target == "/idp/sso" and $step == "e1s2") {
-        if (not credentialsOk($body)) {
+        # A real IdP binds the login to the session cookie it set two hops ago.
+        # The credential POST goes over a fresh connection, so this is what
+        # proves the jar travelled with it.
+        if (not strings.contains(httpd.header($req, "Cookie"), "JSESSIONID=abc")) {
+            httpd.respond($req, 400, "no session cookie on the credential post");
+        } elseif (not credentialsOk($body)) {
             httpd.respond($req, 200, loginPage("That was wrong"));
         } elseif ($mode == "factors") {
             httpd.respond($req, 200, factorPage());

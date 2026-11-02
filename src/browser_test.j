@@ -16,6 +16,23 @@ func fixtureProfile() {
     return $p;
 }
 
+func testBrowserProfileDirExpandsTildeIntoTheOwnersHome() {
+    def p as types.Profile init fixtureProfile();
+    $p.browserProfile = "~/.cache/ocsaml/browser";
+    def nobody as types.BrowserOwner init types.BrowserOwner{name: "", uid: -1, home: ""};
+    testing.assertEqual(browserProfileDir($p, $nobody), os.homeDir() + "/.cache/ocsaml/browser");
+    # Handed back to a user, `~` is that user's home - root's would leave root
+    # owning the session the browser is about to read a cookie out of.
+    def jdoe as types.BrowserOwner init types.BrowserOwner{
+        name: "jdoe",
+        uid: 1000,
+        home: "/home/jdoe"
+    };
+    testing.assertEqual(browserProfileDir($p, $jdoe), "/home/jdoe/.cache/ocsaml/browser");
+    $p.browserProfile = "/srv/browser";
+    testing.assertEqual(browserProfileDir($p, $jdoe), "/srv/browser");
+}
+
 #
 # --------------------------------------------------------- token extraction
 #

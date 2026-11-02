@@ -195,6 +195,12 @@ and SAML assertions, so the directory is created `0700` and the files `0600`).
   no live SSO session is left behind an open debug port. That port carries no
   `--remote-allow-origins`: `*` would let any page in any local browser drive it
   and read the `HttpOnly` cookie.
+- **The debug port is loopback-only and open for the length of the login.** It
+  has no origin check of its own, so on a machine shared with other users
+  another local account could attach to it while you log in.
+  `--remote-debugging-pipe` would avoid the socket, but it needs inherited file
+  descriptors the interpreter cannot hand a child. On a shared machine, set
+  `capture = "paste"`.
 - Some gateways answer `<error id="96">VPN Server internal error.</error>` to a
   client that merely advertises external-browser support. That is treated as a
   no, and `probe` reports it.

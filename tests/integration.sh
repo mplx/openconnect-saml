@@ -93,8 +93,9 @@ exits() {
 export OCSAML_CONFIG=/nonexistent
 
 # A stub openconnect, so the suite tests the command line this program builds
-# rather than whether a VPN client happens to be installed. It answers the two
-# probes (--version, --help) and the --authenticate handoff; it never connects.
+# rather than whether a VPN client happens to be installed. It answers the
+# --help probe (presence and --external-browser in one) and the --authenticate
+# handoff; it never connects.
 mkdir -p "$TMP/bin"
 cat > "$TMP/bin/openconnect" <<'STUB'
 #!/bin/sh

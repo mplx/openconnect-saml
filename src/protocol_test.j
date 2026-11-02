@@ -106,6 +106,32 @@ func testParseAuthRequest() {
     testing.assertContains($ar.opaqueXml, "<tunnel-group>cp_saml</tunnel-group>");
 }
 
+func testParseAuthRequestKeepsTheOpaqueSourceByteForByte() {
+    # Single-quoted attributes, odd spacing and an empty element: everything a
+    # re-encoding would normalise. The gateway compares what it wrote.
+    def raw as string init "<opaque  is-for='sg' x=\"1\"><tunnel-group>cp_saml</tunnel-group>" +
+        "<empty></empty><note/></opaque>";
+    def xmlSrc as string init strings.replace(
+        AUTH_REQUEST,
+        '<opaque is-for="sg"><tunnel-group>cp_saml</tunnel-group></opaque>',
+        $raw);
+    def ar as types.AuthRequest init parseAuthRequest($xmlSrc);
+    testing.assertEqual($ar.opaqueXml, $raw);
+    testing.assertEqual($ar.tunnelGroup, "cp_saml");
+}
+
+func testRawElementHandlesTheEdges() {
+    testing.assertEqual(rawElement("<a><opaque/></a>", "opaque"), "<opaque/>");
+    testing.assertEqual(rawElement("<a><opaque x='1' /></a>", "opaque"), "<opaque x='1' />");
+    # `<opaque-ish>` is a different element.
+    testing.assertEqual(
+        rawElement("<a><opaque-ish>n</opaque-ish><opaque>y</opaque></a>", "opaque"),
+        "<opaque>y</opaque>");
+    testing.assertEqual(rawElement("<a>none here</a>", "opaque"), "");
+    # Unterminated: nothing rather than a guess, so the caller falls back.
+    testing.assertEqual(rawElement("<a><opaque>never closed", "opaque"), "");
+}
+
 func testParseAuthRequestDefaultsTheCookieName() {
     def xmlSrc as string init strings.replace(
         AUTH_REQUEST,
@@ -163,6 +189,37 @@ func testParseAuthCompleteKeepsAConfiguredPin() {
     def p as types.Profile init fixtureProfile();
     $p.servercert = "pin-sha256:MINE";
     testing.assertEqual(parseAuthComplete($p, COMPLETE).fingerprint, "pin-sha256:MINE");
+}
+
+func testParseAuthCompleteAcceptsAHexHash() {
+    def hex as string init strings.repeat("ab", 32);
+    def body as string init strings.replace(COMPLETE, "pin-sha256:AAAA", $hex);
+    testing.assertEqual(parseAuthComplete(fixtureProfile(), $body).fingerprint, $hex);
+}
+
+func testParseAuthCompleteLeavesAnEmptyHashUnpinned() {
+    def body as string init strings.replace(COMPLETE, "pin-sha256:AAAA", "");
+    testing.assertEqual(parseAuthComplete(fixtureProfile(), $body).fingerprint, "");
+}
+
+func throwsOnMalformedHash() {
+    parseAuthComplete(
+        fixtureProfile(),
+        strings.replace(COMPLETE, "pin-sha256:AAAA", "pin-sha256:not a pin"));
+}
+
+func testParseAuthCompleteRefusesAMalformedHash() {
+    # It would become an openconnect argument; fail where the cause is.
+    testing.assertThrows("throwsOnMalformedHash", "gateway");
+}
+
+func testOnlyAGatewayRefusalFallsBackToThePlainProbe() {
+    testing.assertTrue(fallsBackToPlain("gateway"));
+    # A network or TLS failure would fail the plain probe the same way, after
+    # another full timeout, and be reported as a refusal it was not.
+    testing.assertFalse(fallsBackToPlain("runtime"));
+    testing.assertFalse(fallsBackToPlain("timeout"));
+    testing.assertFalse(fallsBackToPlain("http"));
 }
 
 func throwsOnRejectedToken() {

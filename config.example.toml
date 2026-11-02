@@ -53,7 +53,7 @@ browser = "chromium"
 # HTML form. Matched case-insensitively against each control's name, value and
 # id. Without it the first control is taken. Has no effect on Duo's JavaScript
 # prompt, where the choice is made in the browser.
-# factor = "passcode""
+# factor = "passcode"
 
 # Extra flags handed to openconnect verbatim.
 # extra = ["--no-dtls"]

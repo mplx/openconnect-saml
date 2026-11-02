@@ -43,11 +43,12 @@ func finishTokenFlow(prof as types.Profile, ar as types.AuthRequest) {
  * advertised it, so `token` never has to deal with an encrypted token.
  * @param prof {Profile} the active profile
  * @param mode {string} "auto", "external", "token" or "browserless"
+ * @param hasExternal {bool} whether the local openconnect has --external-browser
  * @return {Session} the authenticated session
  * @throws {Error} when the gateway refuses or the token is rejected
  * @since 0.1
  */
-func authenticate(prof as types.Profile, mode as string) {
+func authenticate(prof as types.Profile, mode as string, hasExternal as bool) {
     if ($mode == "external") {
         return tunnel.authenticateExternally($prof);
     }
@@ -55,7 +56,7 @@ func authenticate(prof as types.Profile, mode as string) {
         return browserless.authenticateBrowserless($prof);
     }
 
-    def tryExternal as bool init $mode == "auto" and tunnel.supportsExternalBrowser();
+    def tryExternal as bool init $mode == "auto" and $hasExternal;
     def ar as types.AuthRequest init protocol.emptyAuthRequest();
     if ($tryExternal) {
         $ar = protocol.probeOfferingExternal($prof);
@@ -83,12 +84,18 @@ func authenticate(prof as types.Profile, mode as string) {
  */
 func cmdConnect(r as args.Result) {
     def prof as types.Profile init config.resolveProfile($r);
-    if (not tunnel.haveOpenconnect()) {
+    # One spawn: the help text proves openconnect is there and says whether it
+    # has --external-browser.
+    def help as string init tunnel.openconnectHelp();
+    if ($help == "") {
         util.fail(
             "openconnect",
             "openconnect is not on PATH - install it first (pacman -S openconnect)");
     }
-    def sess as types.Session init authenticate($prof, args.asString($r, "mode"));
+    def sess as types.Session init authenticate(
+        $prof,
+        args.asString($r, "mode"),
+        tunnel.helpHasExternalBrowser($help));
     if ($sess.message != "") {
         io.printf("\n%s\n", $sess.message);
     }
@@ -117,7 +124,10 @@ func cmdConnect(r as args.Result) {
  */
 func cmdCookie(r as args.Result) {
     def prof as types.Profile init config.resolveProfile($r);
-    def sess as types.Session init authenticate($prof, args.asString($r, "mode"));
+    def sess as types.Session init authenticate(
+        $prof,
+        args.asString($r, "mode"),
+        tunnel.supportsExternalBrowser());
     io.printf("COOKIE=%s\n", util.shellQuote($sess.cookie));
     io.printf("CONNECT_URL=%s\n", util.shellQuote($sess.connectUrl));
     io.printf("FINGERPRINT=%s\n", util.shellQuote($sess.fingerprint));
@@ -161,10 +171,11 @@ func cmdProbe(r as args.Result) {
     if ($ar.externalRefused) {
         io.printf("external browser   refused by this gateway (it errors if offered)\n");
     }
-    # Each of these spawns openconnect, and the report needs the second answer
-    # twice, so both are taken once and kept.
-    def haveOc as bool init tunnel.haveOpenconnect();
-    def hasExternal as bool init $haveOc and tunnel.supportsExternalBrowser();
+    # One spawn answers both questions, and the report needs the second answer
+    # twice, so it is taken once and kept.
+    def help as string init tunnel.openconnectHelp();
+    def haveOc as bool init $help != "";
+    def hasExternal as bool init tunnel.helpHasExternalBrowser($help);
     io.printf("openconnect        ");
     if (not $haveOc) {
         io.printf("not installed\n");

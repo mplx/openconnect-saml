@@ -1,0 +1,3 @@
+# Jennifer is not a GitHub Linguist language yet; until it is, GitHub ignores
+# this and guesses JASS / Objective-J / Jasmin for .j files.
+*.j linguist-language=Jennifer
