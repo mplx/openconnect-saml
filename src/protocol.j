@@ -7,7 +7,7 @@
  * Cisco's <config-auth> exchange: build the documents, post them, read the replies.
  *
  * @module protocol
- * @version 0.5.0
+ * @version 0.6.0
  */
 
 use io;

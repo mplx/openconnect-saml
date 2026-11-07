@@ -9,7 +9,7 @@
  * works, by asking you to paste it where it does not.
  *
  * @module browser
- * @version 0.5.0
+ * @version 0.6.0
  */
 
 use io;

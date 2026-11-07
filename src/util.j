@@ -7,7 +7,7 @@
  * string shaping.
  *
  * @module util
- * @version 0.5.0
+ * @version 0.6.0
  */
 
 use io;

@@ -7,7 +7,7 @@
  * The subcommands, the flag parser, and run() - the program as the user meets it.
  *
  * @module commands
- * @version 0.5.0
+ * @version 0.6.0
  */
 
 use io;
@@ -83,7 +83,7 @@ func authenticate(prof as types.Profile, mode as string, hasExternal as bool) {
  * @param prof {Profile} the active profile
  * @param printOnly {bool} only print the command (`--print`)
  * @throws {Error} kind "privilege" when the privilege helper would prompt
- * @since 0.5
+ * @since 0.6
  */
 func preflight(prof as types.Profile, printOnly as bool) {
     if (not $printOnly) {
