@@ -176,7 +176,9 @@ and SAML assertions, so the directory is created `0700` and the files `0600`).
 
 - **sudo.** `connect` uses `sudo -n`, because the child has no terminal to
   prompt on. Run `sudo -v` first, or `--print` to get the command and run it
-  yourself.
+  yourself. `connect` checks this before it opens the browser, so a missing
+  `sudo -v` costs no login, and again before it starts the tunnel, in case the
+  cached credentials expired during the login.
 - **Backgrounding.** openconnect daemonises only once the tunnel is up, so a
   successful `connect` means connected. Pid in
   `/run/ocsaml-<profile>.pid`, output in `...log` - read that first

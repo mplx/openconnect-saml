@@ -362,6 +362,9 @@ terminal on which to prompt. Run
 first, or use
 .B \-\-print
 to obtain the command and run it yourself.
+.B connect
+checks this before it opens the browser, and again before it starts the
+tunnel, in case the cached credentials expired during the login.
 .PP
 The session cookie is passed to
 .BR openconnect (8)

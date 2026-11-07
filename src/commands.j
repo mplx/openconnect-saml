@@ -76,6 +76,22 @@ func authenticate(prof as types.Profile, mode as string, hasExternal as bool) {
 #
 
 /**
+ * Check, before the browser opens, what starting the tunnel will need: a
+ * login and its second factor are wasted if the tunnel then cannot start for
+ * want of sudo rights. `--print` starts nothing, so it needs none.
+ * `startTunnel` checks again, for a cache that expired during the login.
+ * @param prof {Profile} the active profile
+ * @param printOnly {bool} only print the command (`--print`)
+ * @throws {Error} kind "privilege" when the privilege helper would prompt
+ * @since 0.5
+ */
+func preflight(prof as types.Profile, printOnly as bool) {
+    if (not $printOnly) {
+        tunnel.checkPrivilege($prof);
+    }
+}
+
+/**
  * The `connect` command: authenticate, then bring the tunnel up.
  * @param r {args.Result} the parsed command line
  * @return {int} the process exit code
@@ -92,6 +108,7 @@ func cmdConnect(r as args.Result) {
             "openconnect",
             "openconnect is not on PATH - install it first (pacman -S openconnect)");
     }
+    preflight($prof, args.asBool($r, "print"));
     def sess as types.Session init authenticate(
         $prof,
         args.asString($r, "mode"),
