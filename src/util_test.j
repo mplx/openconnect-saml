@@ -82,7 +82,7 @@ func testBytesToStringDecodesUtf8() {
 
 func testBytesToStringRoundTripsAPassword() {
     def pw as string init "Sömmer-2026€";
-    def raw as bytes init convert.bytesFromString($pw, "utf-8");
+    def raw as bytes init convert.bytesFromString("utf-8", $pw);
     def acc as list of int init [];
     for (def i in 0..len($raw)) {
         $acc[] = $raw[$i];

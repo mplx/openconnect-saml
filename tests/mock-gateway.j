@@ -169,7 +169,7 @@ while (true) { # lint-disable: L105
     # apart by it, so the step is read from the query directly.
     def target as string init httpd.path($req);
     def step as string init httpd.query($req, "execution");
-    def body as string init convert.stringFromBytes(httpd.body($req), "utf-8");
+    def body as string init convert.stringFromBytes("utf-8", httpd.body($req));
 
     if ($target == "/" or strings.startsWith($target, "/saml")) {
         # The AnyConnect XML endpoint.

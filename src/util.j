@@ -309,7 +309,7 @@ export func bytesToString(acc as list of int) {
     for (def i in 0..len($acc)) {
         $buf[$i] = $acc[$i];
     }
-    return convert.stringFromBytes($buf, "utf-8");
+    return convert.stringFromBytes("utf-8", $buf);
 }
 
 /**
