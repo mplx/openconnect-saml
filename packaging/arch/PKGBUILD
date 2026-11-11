@@ -22,13 +22,13 @@ license=('LGPL-3.0-only')
 
 # jennifer runs the script; openconnect builds the tunnel.
 #
-# Deliberately no `jennifer>=0.25.0` here, even though the script needs the
+# Deliberately no `jennifer>=0.26.0` here, even though the script needs the
 # "http chunked" fix that lands in 0.25.0. A pacman version relation cannot
 # express the rule that actually applies: any -dev build is acceptable, because
 # it is ahead of the release it names. jennifer-git currently versions itself
 # 0.24.0.rN.g<sha>, which vercmp puts *below* 0.25.0, so a floor here would
 # refuse to install on exactly the interpreters that do work. The script's own
-# `# pragma-jennifer-version: >=0.25.0` enforces it at runtime with that
+# `# pragma-jennifer-version: >=0.26.0` enforces it at runtime with that
 # nuance, and says so clearly when it is not met.
 depends=(
     'jennifer'

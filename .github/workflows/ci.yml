@@ -28,7 +28,7 @@ jobs:
     runs-on: ubuntu-latest
     container:
       # The official Jennifer image. `:dev` tracks main, which is what this
-      # project needs: it declares `# pragma-jennifer-version: >=0.25.0` for the
+      # project needs: it declares `# pragma-jennifer-version: >=0.26.0` for the
       # "http chunked" fix, and 0.25.0 is not released yet, so `:latest` would
       # be refused by the program's own version floor. Move to `:0.25` when it
       # ships. Hardcoded rather than an env var because `container.image` does
