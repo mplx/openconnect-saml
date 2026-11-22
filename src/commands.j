@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-only
 # SPDX-FileCopyrightText: Copyright (C) 2026 mplx <developer@mplx.eu>
-# pragma-jennifer-version: >=0.26.0
+# pragma-jennifer-version: >=0.27.0
 # pragma-jennifer-capability: exec
 
 /**
@@ -300,7 +300,7 @@ func emptyResult() {
  */
 func argsMessage(message as string) {
     if (strings.startsWith($message, "args: ")) {
-        return strings.substring($message, 6);
+        return $message[6..];
     }
     return $message;
 }

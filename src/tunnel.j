@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-only
 # SPDX-FileCopyrightText: Copyright (C) 2026 mplx <developer@mplx.eu>
-# pragma-jennifer-version: >=0.26.0
+# pragma-jennifer-version: >=0.27.0
 # pragma-jennifer-capability: exec
 
 /**
@@ -249,10 +249,10 @@ func parseAuthenticateOutput(out as string) {
         def l as string init strings.trim($line);
         def i as int init strings.indexOf($l, "=");
         if ($i > 0) {
-            def k as string init strings.substring($l, 0, $i);
-            def v as string init strings.substring($l, $i + 1);
+            def k as string init $l[..$i];
+            def v as string init $l[$i + 1..];
             if (strings.startsWith($v, "'") and strings.endsWith($v, "'") and len($v) >= 2) {
-                $v = strings.substring($v, 1, len($v) - 1);
+                $v = $v[1..len($v) - 1];
             }
             $fields[$k] = $v;
         }

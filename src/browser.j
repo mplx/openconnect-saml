@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-only
 # SPDX-FileCopyrightText: Copyright (C) 2026 mplx <developer@mplx.eu>
-# pragma-jennifer-version: >=0.26.0
+# pragma-jennifer-version: >=0.27.0
 # pragma-jennifer-capability: net
 # pragma-jennifer-capability: exec
 
@@ -108,8 +108,8 @@ func extractToken(raw as string, cookieName as string) {
         for (def piece in strings.split($s, ";")) {
             def kv as string init strings.trim($piece);
             def i as int init strings.indexOf($kv, "=");
-            if ($i > 0 and strings.substring($kv, 0, $i) == $cookieName) {
-                return strings.trim(strings.substring($kv, $i + 1));
+            if ($i > 0 and $kv[..$i] == $cookieName) {
+                return strings.trim($kv[$i + 1..]);
             }
         }
         # A Cookie header without the cookie we asked for. Returning the whole
@@ -120,7 +120,7 @@ func extractToken(raw as string, cookieName as string) {
 
     def prefix as string init $cookieName + "=";
     if (strings.startsWith($s, $prefix)) {
-        return strings.substring($s, len($prefix));
+        return $s[len($prefix)..];
     }
     return $s;
 }
@@ -395,7 +395,7 @@ func cdpEndpoint(port as int, waitMs as int, child as os.Process, logPath as str
 func domainCovers(domain as string, host as string) {
     def d as string init strings.lower($domain);
     if (strings.startsWith($d, ".")) {
-        $d = strings.substring($d, 1);
+        $d = $d[1..];
     }
     def h as string init strings.lower($host);
     return $d == $h or strings.endsWith($h, "." + $d);

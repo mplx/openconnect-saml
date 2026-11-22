@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-only
 # SPDX-FileCopyrightText: Copyright (C) 2026 mplx <developer@mplx.eu>
-# pragma-jennifer-version: >=0.26.0
+# pragma-jennifer-version: >=0.27.0
 
 /**
  * The config file and the command line, resolved into one Profile.
@@ -231,7 +231,7 @@ func normaliseServer(server as string) {
         $out = "https://" + $server;
     }
     def scheme as string init strings.lower(uri.parse($out).scheme);
-    return $scheme + strings.substring($out, len($scheme));
+    return $scheme + $out[len($scheme)..];
 }
 
 /**

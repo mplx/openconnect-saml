@@ -43,8 +43,8 @@ func testIsCertPinAcceptsWhatOpenconnectTakes() {
     testing.assertTrue(isCertPin("pin-sha256:abc+/DEF012="));
     # Hex digests: SHA-1 and SHA-256, bare or prefixed, colons allowed.
     testing.assertTrue(isCertPin("0123456789abcdef0123456789abcdef01234567"));
-    testing.assertTrue(isCertPin("sha256:" + strings.repeat("ab", 32)));
-    testing.assertTrue(isCertPin("sha1:" + strings.repeat("AB:", 19) + "AB"));
+    testing.assertTrue(isCertPin("sha256:" + strings.replicate("ab", 32)));
+    testing.assertTrue(isCertPin("sha1:" + strings.replicate("AB:", 19) + "AB"));
 }
 
 func testIsCertPinRefusesTheRest() {
@@ -82,7 +82,7 @@ func testBytesToStringDecodesUtf8() {
 
 func testBytesToStringRoundTripsAPassword() {
     def pw as string init "Sömmer-2026€";
-    def raw as bytes init convert.bytesFromString("utf-8", $pw);
+    def raw as bytes init encoding.encode("utf-8", $pw);
     def acc as list of int init [];
     for (def i in 0..len($raw)) {
         $acc[] = $raw[$i];

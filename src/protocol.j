@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-only
 # SPDX-FileCopyrightText: Copyright (C) 2026 mplx <developer@mplx.eu>
-# pragma-jennifer-version: >=0.26.0
+# pragma-jennifer-version: >=0.27.0
 # pragma-jennifer-capability: net
 
 /**
@@ -202,16 +202,16 @@ func rawElement(body as string, name as string) {
         }
         # `<opaque` must not match `<opaque-ish`: the name ends at whitespace,
         # `>` or `/`.
-        def c as string init strings.substring($body, $after, $after + 1);
+        def c as string init $body[$after..$after + 1];
         if ($c == ">" or $c == "/" or strings.trim($c) == "") {
             def j as int init strings.indexOf($body, $close, $after);
             if ($j >= 0) {
-                return strings.substring($body, $i, $j + len($close));
+                return $body[$i..$j + len($close)];
             }
             # No end tag: a self-closing `<name .../>` ends at its own `>`.
             def gt as int init strings.indexOf($body, ">", $after);
-            if ($gt > 0 and strings.substring($body, $gt - 1, $gt) == "/") {
-                return strings.substring($body, $i, $gt + 1);
+            if ($gt > 0 and $body[$gt - 1..$gt] == "/") {
+                return $body[$i..$gt + 1];
             }
             return "";
         }

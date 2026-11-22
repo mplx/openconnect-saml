@@ -18,8 +18,8 @@ ocsaml disconnect
 ## Requirements
 
 - `openconnect`
-- `jennifer` **>=0.26.0**;
-  the program declares `pragma-jennifer-version: >=0.26.0`
+- `jennifer` **>=0.27.0**;
+  the program declares `pragma-jennifer-version: >=0.27.0`
 - a browser; Chromium-based (chromium, chrome, brave, vivaldi, edge) also gets
   automatic cookie capture
 

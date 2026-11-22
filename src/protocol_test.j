@@ -192,7 +192,7 @@ func testParseAuthCompleteKeepsAConfiguredPin() {
 }
 
 func testParseAuthCompleteAcceptsAHexHash() {
-    def hex as string init strings.repeat("ab", 32);
+    def hex as string init strings.replicate("ab", 32);
     def body as string init strings.replace(COMPLETE, "pin-sha256:AAAA", $hex);
     testing.assertEqual(parseAuthComplete(fixtureProfile(), $body).fingerprint, $hex);
 }

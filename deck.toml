@@ -13,6 +13,6 @@ deck = "https://raw.githubusercontent.com/mplx/openconnect-saml/main/deck.toml"
 homepage = "https://github.com/mplx/openconnect-saml"
 
 [engines]
-jennifer = ">=0.26.0"
+jennifer = ">=0.27.0"
 
 [decks]

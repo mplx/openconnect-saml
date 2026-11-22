@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-only
 # SPDX-FileCopyrightText: Copyright (C) 2026 mplx <developer@mplx.eu>
-# pragma-jennifer-version: >=0.26.0
+# pragma-jennifer-version: >=0.27.0
 
 /**
  * Small helpers with no topic of their own: errors, escaping, shell quoting, byte and
@@ -14,9 +14,9 @@ use io;
 use os;
 use fs;
 use strings;
-use lists;
 use convert;
 use binary;
+use encoding;
 
 import "./types.j" as types;
 
@@ -104,7 +104,7 @@ export func stripXmlDecl(s as string) {
     if (strings.startsWith($t, "<?xml")) {
         def i as int init strings.indexOf($t, "?>");
         if ($i >= 0) {
-            $t = strings.trim(strings.substring($t, $i + 2));
+            $t = strings.trim($t[$i + 2..]);
         }
     }
     return $t;
@@ -182,7 +182,7 @@ export func note(prof as types.Profile, message as string) {
 export func isLoopbackHost(host as string) {
     def h as string init strings.lower($host);
     if (strings.startsWith($h, "[") and strings.endsWith($h, "]")) {
-        $h = strings.substring($h, 1, len($h) - 1);
+        $h = $h[1..len($h) - 1];
     }
     if ($h == "localhost" or $h == "::1") {
         return true;
@@ -287,10 +287,10 @@ export func readLog(path as string) {
 export func dropLastRune(acc as list of int) {
     def out as list of int init $acc;
     while (len($out) > 0 and ($out[len($out) - 1] & 0xc0) == 0x80) {
-        $out = lists.pop($out);
+        $out = $out[..len($out) - 1];
     }
     if (len($out) > 0) {
-        $out = lists.pop($out);
+        $out = $out[..len($out) - 1];
     }
     return $out;
 }
@@ -309,7 +309,7 @@ export func bytesToString(acc as list of int) {
     for (def i in 0..len($acc)) {
         $buf[$i] = $acc[$i];
     }
-    return convert.stringFromBytes("utf-8", $buf);
+    return encoding.decode("utf-8", $buf);
 }
 
 /**
@@ -352,7 +352,7 @@ export func expandHome(p as string, home as string) {
         return $home;
     }
     if (strings.startsWith($p, "~/")) {
-        return $home + strings.substring($p, 1);
+        return $home + $p[1..];
     }
     return $p;
 }
@@ -369,13 +369,13 @@ export func expandHome(p as string, home as string) {
  */
 export func isCertPin(s as string) {
     if (strings.startsWith($s, "pin-sha256:")) {
-        return isBase64(strings.substring($s, 11));
+        return isBase64($s[11..]);
     }
     def hex as string init $s;
     if (strings.startsWith($hex, "sha256:")) {
-        $hex = strings.substring($hex, 7);
+        $hex = $hex[7..];
     } elseif (strings.startsWith($hex, "sha1:")) {
-        $hex = strings.substring($hex, 5);
+        $hex = $hex[5..];
     }
     return isHexDigest($hex);
 }

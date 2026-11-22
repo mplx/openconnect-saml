@@ -1,7 +1,7 @@
 #!/usr/bin/env -S jennifer run
 # SPDX-License-Identifier: LGPL-3.0-only
 # SPDX-FileCopyrightText: Copyright (C) 2026 mplx <developer@mplx.eu>
-# pragma-jennifer-version: >=0.26.0
+# pragma-jennifer-version: >=0.27.0
 # pragma-jennifer-capability: net
 
 /**
@@ -28,6 +28,7 @@ use os;
 use httpd;
 use strings;
 use convert;
+use encoding;
 
 def const GOOD_USER as string init "jdoe";
 def const GOOD_PASS as string init "hunter2";
@@ -169,7 +170,7 @@ while (true) { # lint-disable: L105
     # apart by it, so the step is read from the query directly.
     def target as string init httpd.path($req);
     def step as string init httpd.query($req, "execution");
-    def body as string init convert.stringFromBytes("utf-8", httpd.body($req));
+    def body as string init encoding.decode("utf-8", httpd.body($req));
 
     if ($target == "/" or strings.startsWith($target, "/saml")) {
         # The AnyConnect XML endpoint.
