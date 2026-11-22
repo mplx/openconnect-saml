@@ -47,8 +47,10 @@ fi
 printf '  ok, all formatted\n'
 
 step 'lint'
-# lint exits 0 even with findings, so the findings themselves are the gate.
-findings=$("$JENNIFER" lint $SOURCES 2>&1 | grep -cE ': (info|warning|error):' || true)
+# lint exits 0 even with findings, so the findings themselves are the gate:
+# warnings and errors. Info findings (a deprecation notice, L301) are advice
+# and do not fail it.
+findings=$("$JENNIFER" lint $SOURCES 2>&1 | grep -cE ': (warning|error):' || true)
 if [ "$findings" != "0" ]; then
     "$JENNIFER" lint $SOURCES
     printf 'lint reported %s finding(s)\n' "$findings" >&2
