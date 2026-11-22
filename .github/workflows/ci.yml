@@ -27,12 +27,10 @@ jobs:
     name: Test
     runs-on: ubuntu-latest
     container:
-      # The official Jennifer image. `:dev` tracks main, which is what this
-      # project needs: it declares `# pragma-jennifer-version: >=0.26.0` for the
-      # "http chunked" fix, and 0.25.0 is not released yet, so `:latest` would
-      # be refused by the program's own version floor. Move to `:0.25` when it
-      # ships. Hardcoded rather than an env var because `container.image` does
-      # not take the `env` context.
+      # The official Jennifer image. `:dev` tracks main, which meets the
+      # program's `# pragma-jennifer-version: >=0.27.0`; a release image must
+      # be 0.27.0 or newer. Hardcoded rather than an env var because
+      # `container.image` does not take the `env` context.
       #
       # ENTRYPOINT is `jennifer`, but a job container's entrypoint is replaced
       # by the runner, so `run:` steps get the image's shell as usual. Debian
@@ -43,11 +41,15 @@ jobs:
       options: --user root
     steps:
       # The image ships the interpreter, its modules and ca-certificates, and
-      # nothing else - git included. actions/checkout needs it.
+      # nothing else - git included. actions/checkout needs it. GitHub mounts
+      # its own node into a job container; Forgejo's runner does not, so there
+      # the JavaScript actions need Debian's.
       - name: Install git
+        env:
+          NODE: ${{ github.server_url != 'https://github.com' && 'nodejs' || '' }}
         run: |
           apt-get update
-          apt-get install -y --no-install-recommends git
+          apt-get install -y --no-install-recommends git $NODE
           rm -rf /var/lib/apt/lists/*
 
       - uses: actions/checkout@v4
