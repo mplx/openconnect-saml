@@ -6,7 +6,7 @@
  * The config file and the command line, resolved into one Profile.
  *
  * @module config
- * @version 0.7.0
+ * @version 0.8.0
  */
 
 use os;

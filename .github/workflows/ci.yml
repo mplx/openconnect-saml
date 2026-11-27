@@ -27,15 +27,14 @@ jobs:
     name: Test
     runs-on: ubuntu-latest
     container:
-      # The official Jennifer image. `:dev` tracks main, which meets the
-      # program's `# pragma-jennifer-version: >=0.27.0`; a release image must
-      # be 0.27.0 or newer. Hardcoded rather than an env var because
-      # `container.image` does not take the `env` context.
+      # The official Jennifer image, a release that meets the program's
+      # `# pragma-jennifer-version: >=0.27.0`. Hardcoded rather than an env
+      # var because `container.image` does not take the `env` context.
       #
       # ENTRYPOINT is `jennifer`, but a job container's entrypoint is replaced
       # by the runner, so `run:` steps get the image's shell as usual. Debian
       # userland, so bash, coreutils and the runner's mounted node all work.
-      image: ghcr.io/jennifer-language/jennifer:dev
+      image: ghcr.io/jennifer-language/jennifer:0.28.0
       # The image runs as a non-root user; the checked-out workspace belongs to
       # the runner, so take root to avoid fighting over file ownership.
       options: --user root

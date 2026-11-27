@@ -17,7 +17,7 @@
  * See ocsaml(1) for the interface and the README for the protocol.
  *
  * @module ocsaml
- * @version 0.7.0
+ * @version 0.8.0
  * @see src/saml.j
  * @example
  *   ocsaml probe   --server https://vpn.example.com/saml

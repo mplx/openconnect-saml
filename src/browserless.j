@@ -8,7 +8,7 @@
  * Logging in with no browser at all, by walking the identity provider's HTML forms.
  *
  * @module browserless
- * @version 0.7.0
+ * @version 0.8.0
  */
 
 use io;

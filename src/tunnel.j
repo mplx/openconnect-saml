@@ -8,7 +8,7 @@
  * the background tunnel and its pid file.
  *
  * @module tunnel
- * @version 0.7.0
+ * @version 0.8.0
  */
 
 use io;

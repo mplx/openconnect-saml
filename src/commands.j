@@ -7,7 +7,7 @@
  * The subcommands, the flag parser, and run() - the program as the user meets it.
  *
  * @module commands
- * @version 0.7.0
+ * @version 0.8.0
  */
 
 use io;
